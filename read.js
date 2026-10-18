@@ -238,7 +238,7 @@ function renderText(t){
   main.innerHTML = '<div class="reader-head"><button class="btn small" data-act="home" type="button">← Texts</button><h2>' + esc(t.title) + '</h2>' +
     '<span class="allow" id="allow">' + (free && allowance != null ? allowance + " free lookups left today" : "") + '</span></div>' +
     '<div class="text" id="text" lang="ar" dir="rtl">' + html + '</div>' +
-    '<div class="legend"><span><i style="border-color:var(--known)"></i>Learned</span><span><i style="border-color:var(--learning)"></i>Learning</span><span><i style="border-color:var(--lapis)"></i>Saved</span><span>Tap a word, or drag across several.</span></div>';
+    '<div class="legend"><span><i style="border-color:var(--known)"></i>Learned</span><span><i style="border-color:var(--learning)"></i>Learning</span><span><i style="border-color:var(--lapis)"></i>Saved</span><span>Tap a word. For several, drag across them (on a phone, hold a moment first).</span></div>';
 }
 function refreshUnderlines(){
   document.querySelectorAll("#text .w").forEach(function(el){
@@ -248,38 +248,97 @@ function refreshUnderlines(){
 function sentenceOf(el){ var s = el && el.closest(".w") ? +el.closest(".w").dataset.s : -1; return s > -1 ? sentences[s].replace(/\s+/g, " ").trim() : ""; }
 function clearSel(){ document.querySelectorAll(".w.sel").forEach(function(el){ el.classList.remove("sel"); }); }
 
-var lastPointer = 0;
-main.addEventListener("click", function(e){
-  var w = e.target.closest("#text .w"); if (!w) return;
-  var sel = window.getSelection();
-  if (sel && !sel.isCollapsed && sel.toString().trim().split(/\s+/).length > 1) return;  // phrase handled on pointerup
-  clearSel(); w.classList.add("sel");
-  lookup(w.textContent, sentenceOf(w));
-});
-function phraseFromSelection(){
-  var sel = window.getSelection();
-  if (!sel || sel.isCollapsed) return;
-  var text = sel.toString().replace(/\s+/g, " ").trim();
-  if (!new RegExp("[" + LETTER + "]").test(text) || text.split(" ").length < 2) return;
-  var box = $("#text"); if (!box || !box.contains(sel.anchorNode)) return;
-  if (text.length > 300) { toast("Select a shorter phrase (up to a sentence)."); return; }
+/* Word selection. The browser's own text highlighting is switched off on the text (see read.html);
+   instead: click or tap a word; drag across words with a mouse; on a phone, press and hold a word
+   briefly, then slide. The popup's "+ next word" / "+ previous word" buttons grow a selection too. */
+var MAX_WORDS = 30;
+function wordEls(){ return Array.prototype.slice.call(document.querySelectorAll("#text .w")); }
+function showRange(a, b){
   clearSel();
-  var anchor = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
-  // Mark the chosen words ourselves and drop the browser's grey selection box.
-  box.querySelectorAll(".w").forEach(function(w){ if (sel.containsNode(w, true)) w.classList.add("sel"); });
-  sel.removeAllRanges();
-  lookup(text.replace(new RegExp("[^" + LETTER + "\\s]", "g"), "").trim(), sentenceOf(anchor));
+  wordEls().slice(Math.min(a, b), Math.max(a, b) + 1).forEach(function(el){ el.classList.add("sel"); });
 }
-document.addEventListener("mouseup", function(){ setTimeout(phraseFromSelection, 10); });
-document.addEventListener("touchend", function(){ setTimeout(phraseFromSelection, 350); });
+function lookupRange(a, b){
+  var els = wordEls(), lo = Math.min(a, b), hi = Math.max(a, b);
+  if (hi - lo >= MAX_WORDS) { hi = lo + MAX_WORDS - 1; toast("That's a long selection, so only the first " + MAX_WORDS + " words were used."); }
+  showRange(lo, hi);
+  var text = els.slice(lo, hi + 1).map(function(el){ return el.textContent; }).join(" ");
+  lookup(text, sentenceOf(els[lo]), [lo, hi]);
+}
+var drag = null; // {start, end, active, touch, x, y, id, timer}
+main.addEventListener("pointerdown", function(e){
+  var w = e.target.closest("#text .w"); if (!w || e.button > 0) return;
+  var i = +w.dataset.i, touch = e.pointerType === "touch";
+  drag = {start:i, end:i, active:!touch, touch:touch, x:e.clientX, y:e.clientY, id:e.pointerId};
+  if (!touch) e.preventDefault();
+  // On a phone, a short hold starts a multi-word selection; moving straight away is a scroll.
+  if (touch) drag.timer = setTimeout(function(){
+    if (!drag) return;
+    drag.active = true; showRange(drag.start, drag.start);
+    if (navigator.vibrate) { try { navigator.vibrate(8); } catch (err) {} }
+  }, 350);
+});
+document.addEventListener("pointermove", function(e){
+  if (!drag || e.pointerId !== drag.id) return;
+  if (!drag.active) {
+    if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 10) { clearTimeout(drag.timer); drag = null; }
+    return;
+  }
+  var el = document.elementFromPoint(e.clientX, e.clientY), w = el && el.closest ? el.closest("#text .w") : null;
+  if (w && +w.dataset.i !== drag.end) { drag.end = +w.dataset.i; showRange(drag.start, drag.end); }
+});
+// While selecting on a phone, stop the page from scrolling under the finger.
+main.addEventListener("touchmove", function(e){ if (drag && drag.active) e.preventDefault(); }, {passive:false});
+main.addEventListener("contextmenu", function(e){ if (e.target.closest("#text")) e.preventDefault(); });
+function endDrag(e){
+  if (!drag || e.pointerId !== drag.id) return;
+  clearTimeout(drag.timer);
+  var d = drag; drag = null;
+  if (e.type === "pointercancel") { if (d.active) clearSel(); return; }
+  lookupRange(d.start, d.end);
+}
+document.addEventListener("pointerup", endDrag);
+document.addEventListener("pointercancel", endDrag);
 
 /* ---------- the popup ---------- */
 var cur = null; // {text, sentence, card, translation, state}
 function closePop(){ pop.hidden = true; cur = null; clearSel(); }
-function lookup(text, sentence){
+// Put the popup a little below the selected words, centred on the last line of the selection,
+// or above the first line when there isn't room below. It always stays inside the screen.
+var GAP = 12, EDGE = 12;
+function placePop(){
+  if (pop.hidden) return;
+  var rects = [];
+  document.querySelectorAll("#text .w.sel").forEach(function(el){ Array.prototype.forEach.call(el.getClientRects(), function(r){ rects.push(r); }); });
+  var vw = document.documentElement.clientWidth, vh = window.innerHeight;
+  var w = pop.offsetWidth, h = pop.offsetHeight, sx = window.scrollX, sy = window.scrollY;
+  if (!rects.length) {
+    // Nothing on screen to point at: sit near the bottom of the screen.
+    pop.classList.remove("above"); pop.style.setProperty("--caret", "-100px");
+    pop.style.left = (sx + (vw - w) / 2) + "px"; pop.style.top = (sy + vh - h - EDGE) + "px";
+    return;
+  }
+  var bottom = Math.max.apply(null, rects.map(function(r){ return r.bottom; }));
+  var top = Math.min.apply(null, rects.map(function(r){ return r.top; }));
+  var lastLine = rects.filter(function(r){ return r.bottom >= bottom - 4; });
+  var firstLine = rects.filter(function(r){ return r.top <= top + 4; });
+  function middle(line){ var l = Math.min.apply(null, line.map(function(r){ return r.left; })), rr = Math.max.apply(null, line.map(function(r){ return r.right; })); return (l + rr) / 2; }
+  var roomBelow = vh - bottom - GAP - EDGE, roomAbove = top - GAP - EDGE;
+  var above = h > roomBelow && roomAbove > roomBelow;
+  var cx = middle(above ? firstLine : lastLine);
+  var left = Math.min(Math.max(cx - w / 2, EDGE), vw - w - EDGE);
+  var y = above ? top - GAP - h : bottom + GAP;
+  pop.classList.toggle("above", above);
+  pop.style.left = (sx + left) + "px";
+  pop.style.top = (sy + y) + "px";
+  pop.style.setProperty("--caret", Math.min(Math.max(cx - left, 22), w - 22) + "px");
+  // Not enough room either way (very small screens): scroll just enough to show the whole popup.
+  if (!above && y + h > vh - EDGE) window.scrollBy({top: y + h - vh + EDGE, behavior: "smooth"});
+}
+window.addEventListener("resize", placePop);
+function lookup(text, sentence, range){
   text = String(text).trim(); if (!text) return;
   var card = match(text);
-  cur = {text:text, sentence:sentence, card:card, translation:null, state:card ? "known" : "loading"};
+  cur = {text:text, sentence:sentence, card:card, translation:null, state:card ? "known" : "loading", range:range || null};
   renderPop();
   if (!card) translate();
 }
@@ -327,8 +386,15 @@ function renderPop(){
         (c.editing ? "" : '<button class="link" data-act="edit" type="button">Edit meaning</button>') + '</div>';
     }
   }
-  html += '<div class="row" style="margin-top:10px"><button class="listen" data-act="speak" type="button">Listen</button></div>';
+  var count = wordEls().length;
+  html += '<div class="row" style="margin-top:10px"><button class="listen" data-act="speak" type="button">Listen</button>' +
+    (c.range ? '<span class="grow">' +
+      // Arabic reads right to left: the next word is on the left, the previous word on the right.
+      (c.range[1] < count - 1 && c.range[1] - c.range[0] < MAX_WORDS - 1 ? '<button class="listen" data-act="grow-next" type="button">← + next word</button>' : "") +
+      (c.range[0] > 0 && c.range[1] - c.range[0] < MAX_WORDS - 1 ? '<button class="listen" data-act="grow-prev" type="button">+ previous word →</button>' : "") +
+      '</span>' : "") + '</div>';
   pop.innerHTML = html; pop.hidden = false;
+  placePop();
 }
 pop.addEventListener("click", function(e){
   var a = e.target.closest("[data-act]"); if (!a || !cur) return;
@@ -336,6 +402,8 @@ pop.addEventListener("click", function(e){
   if (act === "close") return closePop();
   if (act === "translate") return translate();
   if (act === "speak") return speak(cur.text);
+  if (act === "grow-next" && cur.range) return lookupRange(cur.range[0], cur.range[1] + 1);
+  if (act === "grow-prev" && cur.range) return lookupRange(cur.range[0] - 1, cur.range[1]);
   if (act === "edit") { cur.editing = true; renderPop(); var i = $("#editMeaning"); if (i) i.focus(); return; }
   if (act === "subscribe") return subscribe(a);
   if (act === "save") return save();
@@ -409,9 +477,10 @@ sb.auth.getSession().then(function(r){
   user = s ? s.user : stored;
   loadCached();
   var access = CFG.readerAccess || "off";
-  // Known not allowed already (switched off, or a cached non-admin profile): back to the flashcards.
-  if (access === "off" || (access === "admin" && profile && profile.role !== "admin")) { location.replace("./"); return; }
+  // Switched off: back to the flashcards. A saved non-admin role may be out of date, so that waits for the server.
+  if (access === "off") { location.replace("./"); return; }
   var shown = readerAllowed();
+  if (!shown) main.innerHTML = '<div class="panel"><p>Loading…</p></div>';
   var idx = lsGet(ukey("read-index"));
   if (idx) { library = idx.library || []; readable = new Set(idx.readable || []); mine = idx.mine || []; }
   if (shown) route();
