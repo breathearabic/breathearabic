@@ -102,6 +102,11 @@ button{cursor:pointer}
 .mark{font-family:var(--ar);font-size:3.1rem;line-height:1;color:var(--lapis);font-weight:700;white-space:nowrap}
 .logo{flex:none;width:72px;height:72px;border-radius:16px;display:block}
 .top:has(.logo){justify-content:flex-start;align-items:center}
+.topnav{margin-left:auto}
+.pillnav{display:inline-block;border:1.5px solid var(--line);border-radius:999px;padding:7px 16px;font-weight:600;font-size:.92rem;text-decoration:none;color:var(--ink);background:var(--surface)}
+.mine-tag{color:var(--lapis);font-weight:600}
+.mine-tools{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin-top:10px;font-size:.88rem;color:var(--muted)}
+.mine-tools select{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:4px 6px;color:var(--ink);margin-left:6px}
 
 /* CEFR staircase */
 .stairs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;align-items:end;height:148px}
@@ -313,6 +318,7 @@ footer p{margin:0;max-width:62ch}
       <h1>Breathe Arabic</h1>
       <p><span id="total"></span> Arabic words, sorted by CEFR level</p>
     </div>
+    <nav class="topnav" id="topnav" hidden><a class="pillnav" href="read">Read</a></nav>
   </header>
 
   <section class="signin" id="signin" aria-labelledby="signinTitle" hidden>
@@ -367,6 +373,12 @@ footer p{margin:0;max-width:62ch}
         <option value="20">20</option>
         <option value="30">30</option>
         <option value="50">50</option>
+      </select>
+    </label>
+    <label id="srcWrap" hidden>Words
+      <select id="srcSel">
+        <option value="all">All words</option>
+        <option value="mine">Only my saved words</option>
       </select>
     </label>
   </div>

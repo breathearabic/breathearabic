@@ -1,5 +1,5 @@
 /* Breathe Arabic service worker: keeps the app working offline. */
-const VERSION = "arvocab-v10";
+const VERSION = "arvocab-v11";
 const FONT_CACHE = "arvocab-fonts";
 const SHELL = [
   "./",
@@ -7,10 +7,12 @@ const SHELL = [
   "./manifest.webmanifest",
   "./config.js",
   "./app.js",
+  "./read.html",
+  "./read.js",
   "./fsrs.js",
   "./vendor/supabase-js-2.117.2.js",
-  "./privacy",
-  "./terms",
+  "./privacy.html",
+  "./terms.html",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-maskable-512.png",
@@ -42,7 +44,7 @@ self.addEventListener("fetch", (event) => {
   }
   if (url.origin === self.location.origin) {
     // App code and settings: use the network when it answers quickly, so updates arrive straight away.
-    if (/\/(app|config|fsrs)\.js$|\/admin\.html$/.test(url.pathname)) { event.respondWith(networkFirstAsset(req)); return; }
+    if (/\/(app|config|fsrs|read)\.js$|\/admin\.html$/.test(url.pathname)) { event.respondWith(networkFirstAsset(req)); return; }
     event.respondWith(cacheFirst(req));
     return;
   }
@@ -69,7 +71,8 @@ async function networkFirst(req) {
     const path = new URL(req.url).pathname;
     const isStart = path.endsWith("/") || path.endsWith("/index.html");
     if (!isStart) {
-      const page = (await cache.match(path, { ignoreSearch: true })) || (await cache.match(req, { ignoreSearch: true }));
+      const page = (await cache.match(path, { ignoreSearch: true })) || (await cache.match(req, { ignoreSearch: true })) ||
+        (!path.endsWith(".html") ? await cache.match(path + ".html", { ignoreSearch: true }) : null);
       if (page) return page;
     }
     return (await cache.match("./index.html")) || (await cache.match("./")) || Response.error();

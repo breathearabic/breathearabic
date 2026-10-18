@@ -1,0 +1,424 @@
+(function(){
+"use strict";
+var CFG = window.ARVOCAB_CONFIG || {};
+var LV = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
+var TY = {n:"noun", v:"verb", a:"adjective", d:"adverb", p:"phrase", r:"particle"};
+var $ = function(s){ return document.querySelector(s); };
+var main = $("#main"), pop = $("#pop");
+var PAGE = 1000;
+
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(ch){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]; }); }
+function lsGet(k){ try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function check(q){ return q.then(function(r){ if (r.error) throw r.error; return r; }); }
+
+if (!CFG.supabaseUrl || !CFG.supabaseKey || !window.supabase) { main.innerHTML = '<div class="panel"><p>This copy of the app isn\'t connected yet.</p></div>'; return; }
+var sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, {auth:{persistSession:true, autoRefreshToken:true, detectSessionInUrl:true}});
+var user = null, member = null, profile = null;
+var cards = [], prog = {}, byKey = new Map();
+var library = [], readable = new Set(), mine = [];
+var allowance = null; // lookups left today, for free accounts
+function ukey(k){ return "arvocab-u:" + user.id + ":" + k; }
+
+/* ---------- membership (same rules as the flashcards) ---------- */
+function hasAccess(){
+  if (profile && profile.role === "admin") return true;
+  var m = member; if (!m) return false;
+  var end = m.current_period_end ? Date.parse(m.current_period_end) : null, now = Date.now();
+  if ((m.status === "active" || m.status === "comp") && (end == null || end > now)) return true;
+  return (m.status === "canceled" || m.status === "past_due") && end != null && end > now;
+}
+var FREE_LOOKUPS = 10;
+// Set in config.js: "admin" (only admins, for testing), "everyone", or "off".
+function readerAllowed(){
+  var access = CFG.readerAccess || "off";
+  return access === "everyone" || (access === "admin" && !!profile && profile.role === "admin");
+}
+
+/* ---------- matching tapped words to the deck and saved words ---------- */
+var LETTER = "ء-غف-يً-ٰٟٱ-ۓـ";
+var WORD_RE = new RegExp("[" + LETTER + "]+|[^" + LETTER + "]+", "g");
+var IS_WORD = new RegExp("^[" + LETTER + "]+$");
+function normKey(s){
+  return String(s).replace(/[ً-ٰٟـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
+    .replace(new RegExp("[^ء-ي\\s]", "g"), " ").replace(/\s+/g, " ").trim();
+}
+var PREFIXES = ["وبال", "وكال", "وال", "فال", "بال", "كال", "لل", "ال", "و", "ف", "ب", "ل", "ك", "س"];
+var SUFFIXES = ["هما", "كما", "تما", "هم", "هن", "كم", "كن", "نا", "ها", "ات", "ون", "ين", "ان", "تم", "وا", "ه", "ك", "ي", "ت"];
+function candidates(k){
+  var out = [k], seen = {}; seen[k] = 1;
+  function add(x){ if (x.length >= 2 && !seen[x]) { seen[x] = 1; out.push(x); } }
+  var stems = [k];
+  PREFIXES.forEach(function(p){ if (k.indexOf(p) === 0 && k.length - p.length >= 2) stems.push(k.slice(p.length)); });
+  stems.slice().forEach(function(s){ SUFFIXES.forEach(function(x){ if (s.length - x.length >= 2 && s.slice(-x.length) === x) stems.push(s.slice(0, -x.length)); }); });
+  // A ta marbuta becomes ت before a suffix (مدرستي → مدرسة).
+  stems.slice().forEach(function(s){ if (/ت$/.test(s)) stems.push(s.slice(0, -1) + "ه"); });
+  stems.forEach(function(s){ add(s); add("ال" + s); if (s.indexOf("ال") === 0) add(s.slice(2)); add(s + "ه"); });
+  return out;
+}
+function indexCards(){
+  byKey = new Map();
+  cards.forEach(function(c){
+    var full = normKey(c.ar);
+    var parts = [full].concat(String(c.ar).split(/[\/،,\-–×()\[\]=]|\sج\s|\sم\s|\sالمفرد\s|\sالجمع\s/).map(normKey));
+    parts.forEach(function(p){ if (!p) return; var l = byKey.get(p) || []; if (l.indexOf(c) < 0) l.push(c); byKey.set(p, l); });
+  });
+}
+function bestOf(list){
+  // Prefer the learner's saved word, then a card they've studied, then deck order.
+  return list.slice().sort(function(a, b){ return (b.mine - a.mine) || ((prog[b.id] ? 1 : 0) - (prog[a.id] ? 1 : 0)) || (a.so - b.so); })[0];
+}
+function match(text){
+  var k = normKey(text);
+  if (!k) return null;
+  if (byKey.has(k)) return bestOf(byKey.get(k));
+  if (k.indexOf(" ") > -1) return null;
+  var c = candidates(k);
+  for (var i = 1; i < c.length; i++) if (byKey.has(c[i])) return bestOf(byKey.get(c[i]));
+  return null;
+}
+function stage(card){
+  var s = prog[card.id];
+  if (!s) return card.mine ? "saved, not studied yet" : "not studied yet";
+  return s.st === 2 ? "learned" : "learning";
+}
+function cls(card){
+  if (!card) return "";
+  var s = prog[card.id];
+  if (s) return s.st === 2 ? "k2" : "k1";
+  return card.mine ? "k0" : "";
+}
+
+/* ---------- loading ---------- */
+function toCard(r){ return {id:r.id, ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, ex:Array.isArray(r.examples) ? r.examples : [], so:r.sort_order, free:r.is_free, mine:/^u-/.test(r.id)}; }
+function fetchAll(table, cols, order){
+  var out = [];
+  function page(from){
+    return check(sb.from(table).select(cols).order(order, {ascending:true}).range(from, from + PAGE - 1)).then(function(r){
+      out = out.concat(r.data || []);
+      return r.data && r.data.length === PAGE ? page(from + PAGE) : out;
+    });
+  }
+  return page(0);
+}
+function loadCached(){
+  cards = (lsGet(ukey("cards")) || []).map(function(c){ c.mine = /^u-/.test(c.id); return c; });
+  prog = lsGet(ukey("prog")) || {};
+  member = lsGet(ukey("member")); profile = lsGet(ukey("profile"));
+  indexCards();
+}
+function loadRemote(){
+  return Promise.all([
+    fetchAll("cards", "id,level,word_type,arabic,english,examples,sort_order,is_free", "sort_order"),
+    fetchAll("progress", "card_id,state", "card_id"),
+    check(sb.from("memberships").select("*").eq("user_id", user.id).maybeSingle()),
+    check(sb.from("profiles").select("id,email,role").eq("id", user.id).maybeSingle()),
+    check(sb.rpc("library_index")),
+    check(sb.from("texts").select("id,owner_id,title,level,is_free,created_at").order("created_at", {ascending:false}))
+  ]).then(function(r){
+    cards = r[0].map(toCard);
+    // Keep any answers the flashcards haven't sent yet: they're in the local copy.
+    var local = lsGet(ukey("prog")) || {};
+    prog = {}; r[1].forEach(function(x){ prog[x.card_id] = x.state; });
+    Object.keys(local).forEach(function(id){ prog[id] = local[id]; });
+    member = r[2].data || null; profile = r[3].data || null;
+    library = r[4].data || [];
+    readable = new Set(r[5].data.filter(function(t){ return !t.owner_id; }).map(function(t){ return t.id; }));
+    mine = r[5].data.filter(function(t){ return t.owner_id === user.id; });
+    lsSet(ukey("cards"), cards); lsSet(ukey("member"), member); lsSet(ukey("profile"), profile);
+    lsSet(ukey("read-index"), {library:library, readable:Array.from(readable), mine:mine});
+    indexCards();
+    if (!hasAccess()) return sb.from("lookup_usage").select("lookups").eq("user_id", user.id).eq("day", new Date().toISOString().slice(0, 10)).maybeSingle()
+      .then(function(u){ allowance = Math.max(0, FREE_LOOKUPS - ((u.data && u.data.lookups) || 0)); }, function(){});
+  });
+}
+
+/* ---------- library and own texts ---------- */
+function renderHome(){
+  closePop();
+  var free = !hasAccess();
+  var html = "";
+  if (free) html += '<div class="panel"><h2>Free account</h2><p>You get ' + FREE_LOOKUPS + ' word lookups a day and the free texts. Members get unlimited lookups and the whole library.' +
+    (allowance != null ? " " + allowance + " lookup" + (allowance === 1 ? "" : "s") + " left today." : "") + '</p>' +
+    '<div class="row" style="margin-top:0"><button class="btn primary small" data-act="subscribe" type="button">Subscribe' + (CFG.priceLabel ? " · " + esc(CFG.priceLabel) : "") + '</button></div></div>';
+  html += '<div class="panel"><h2>Library</h2><p>Texts chosen for learners, by level.</p><div class="list">';
+  if (!library.length) html += '<p class="msg">No texts yet. Check back soon.</p>';
+  library.forEach(function(t){
+    var open = readable.has(t.id);
+    html += '<button class="item' + (open ? "" : " locked") + '" data-text="' + t.id + '" type="button"><span><span class="t">' + esc(t.title) + '</span>' +
+      (t.level ? ' <small>' + LV[t.level] + '</small>' : "") + '</span>' +
+      (open ? (t.is_free && free ? '<span class="tag free">Free</span>' : "") : '<span class="tag">Members</span>') + '</button>';
+  });
+  html += '</div></div>';
+  html += '<div class="panel paste"><h2>Read your own text</h2><p>Paste any Arabic text: an article, a hadith, your lesson notes. It\'s saved privately to your account.</p>' +
+    '<label for="pTitle">Title</label><input id="pTitle" maxlength="200" placeholder="e.g. Lesson 12 reading">' +
+    '<label for="pBody">Arabic text</label><textarea id="pBody" dir="rtl" lang="ar" maxlength="20000" placeholder="الصق النص هنا"></textarea>' +
+    '<div class="row"><button class="btn primary" id="pGo" type="button">Start reading</button><span class="msg" id="pMsg"></span></div></div>';
+  if (mine.length) {
+    html += '<div class="panel"><h2>Your texts</h2><div class="list">';
+    mine.forEach(function(t){
+      html += '<div class="item"><button class="link" data-text="' + t.id + '" type="button" style="text-decoration:none;color:var(--ink);font-weight:600;text-align:left">' + esc(t.title) + '</button>' +
+        '<button class="link" data-del="' + t.id + '" type="button" style="color:var(--wrong)">Delete</button></div>';
+    });
+    html += '</div></div>';
+  }
+  main.innerHTML = html;
+}
+main.addEventListener("click", function(e){
+  var t = e.target.closest("[data-text]");
+  if (t) {
+    var id = t.dataset.text;
+    var inLib = library.some(function(x){ return x.id === id; });
+    if (inLib && !readable.has(id)) { toast("This text is for members.", true); return; }
+    location.hash = "t=" + id; return;
+  }
+  var d = e.target.closest("[data-del]");
+  if (d) {
+    if (d.dataset.armed !== "1") { d.dataset.armed = "1"; d.textContent = "Tap again to delete"; return; }
+    check(sb.from("texts").delete().eq("id", d.dataset.del)).then(function(){
+      mine = mine.filter(function(x){ return x.id !== d.dataset.del; }); renderHome();
+    }).catch(function(err){ toast("Couldn't delete: " + err.message); });
+    return;
+  }
+  if (e.target.id === "pGo") return startPasted();
+  if (e.target.closest("[data-act=subscribe]")) return subscribe(e.target.closest("[data-act=subscribe]"));
+  if (e.target.closest("[data-act=home]")) { location.hash = ""; return; }
+});
+function startPasted(){
+  var body = $("#pBody").value.trim(), title = $("#pTitle").value.trim() || body.replace(/\s+/g, " ").slice(0, 40);
+  var msg = $("#pMsg");
+  if (!new RegExp("[" + LETTER + "]").test(body)) { msg.textContent = "Paste some Arabic text first."; msg.className = "msg bad"; return; }
+  $("#pGo").disabled = true; msg.textContent = "Saving…"; msg.className = "msg";
+  check(sb.from("texts").insert({owner_id:user.id, title:title, body:body}).select("id,owner_id,title,level,is_free,created_at").single()).then(function(r){
+    mine.unshift(r.data); cacheText(r.data.id, {title:title, body:body});
+    location.hash = "t=" + r.data.id;
+  }).catch(function(){
+    // Offline or over the limit: read it anyway without saving.
+    cacheText("draft", {title:title, body:body}); location.hash = "t=draft";
+  });
+}
+function cacheText(id, t){
+  var all = lsGet(ukey("texts")) || {}; all[id] = t;
+  var keys = Object.keys(all); if (keys.length > 12) delete all[keys[0]];
+  lsSet(ukey("texts"), all);
+}
+function getText(id){
+  var cached = (lsGet(ukey("texts")) || {})[id];
+  if (id === "draft") return Promise.resolve(cached || null);
+  return check(sb.from("texts").select("id,title,body,level").eq("id", id).maybeSingle()).then(function(r){
+    if (r.data) cacheText(id, {title:r.data.title, body:r.data.body});
+    return r.data || null;
+  }).catch(function(){ return cached || null; });
+}
+
+/* ---------- the reader ---------- */
+var sentences = [];
+function renderText(t){
+  closePop();
+  if (!t) { main.innerHTML = '<div class="panel"><p>That text isn\'t available. It may be for members only, or deleted.</p><div class="row"><button class="btn" data-act="home" type="button">Back to texts</button></div></div>'; return; }
+  sentences = [""];
+  var wi = 0, si = 0, html = "";
+  String(t.body).split(/\n\s*\n|\r?\n/).forEach(function(par){
+    if (!par.trim()) return;
+    html += "<p>";
+    (par.match(WORD_RE) || []).forEach(function(tok){
+      if (IS_WORD.test(tok)) {
+        var c = match(tok);
+        html += '<span class="w ' + cls(c) + '" data-i="' + (wi++) + '" data-s="' + si + '">' + esc(tok) + '</span>';
+        sentences[si] += tok;
+      } else {
+        html += esc(tok);
+        sentences[si] += tok;
+        if (/[.!?؟؛۔]/.test(tok)) { si++; sentences[si] = ""; }
+      }
+    });
+    html += "</p>"; si++; sentences[si] = "";
+  });
+  var free = !hasAccess();
+  main.innerHTML = '<div class="reader-head"><button class="btn small" data-act="home" type="button">← Texts</button><h2>' + esc(t.title) + '</h2>' +
+    '<span class="allow" id="allow">' + (free && allowance != null ? allowance + " free lookups left today" : "") + '</span></div>' +
+    '<div class="text" id="text" lang="ar" dir="rtl">' + html + '</div>' +
+    '<div class="legend"><span><i style="border-color:var(--known)"></i>Learned</span><span><i style="border-color:var(--learning)"></i>Learning</span><span><i style="border-color:var(--lapis)"></i>Saved</span><span>Tap a word, or drag across several.</span></div>';
+}
+function refreshUnderlines(){
+  document.querySelectorAll("#text .w").forEach(function(el){
+    el.className = "w " + cls(match(el.textContent)) + (el.classList.contains("sel") ? " sel" : "");
+  });
+}
+function sentenceOf(el){ var s = el && el.closest(".w") ? +el.closest(".w").dataset.s : -1; return s > -1 ? sentences[s].replace(/\s+/g, " ").trim() : ""; }
+function clearSel(){ document.querySelectorAll(".w.sel").forEach(function(el){ el.classList.remove("sel"); }); }
+
+var lastPointer = 0;
+main.addEventListener("click", function(e){
+  var w = e.target.closest("#text .w"); if (!w) return;
+  var sel = window.getSelection();
+  if (sel && !sel.isCollapsed && sel.toString().trim().split(/\s+/).length > 1) return;  // phrase handled on pointerup
+  clearSel(); w.classList.add("sel");
+  lookup(w.textContent, sentenceOf(w));
+});
+function phraseFromSelection(){
+  var sel = window.getSelection();
+  if (!sel || sel.isCollapsed) return;
+  var text = sel.toString().replace(/\s+/g, " ").trim();
+  if (!new RegExp("[" + LETTER + "]").test(text) || text.split(" ").length < 2) return;
+  var box = $("#text"); if (!box || !box.contains(sel.anchorNode)) return;
+  if (text.length > 300) { toast("Select a shorter phrase (up to a sentence)."); return; }
+  clearSel();
+  var anchor = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+  // Mark the chosen words ourselves and drop the browser's grey selection box.
+  box.querySelectorAll(".w").forEach(function(w){ if (sel.containsNode(w, true)) w.classList.add("sel"); });
+  sel.removeAllRanges();
+  lookup(text.replace(new RegExp("[^" + LETTER + "\\s]", "g"), "").trim(), sentenceOf(anchor));
+}
+document.addEventListener("mouseup", function(){ setTimeout(phraseFromSelection, 10); });
+document.addEventListener("touchend", function(){ setTimeout(phraseFromSelection, 350); });
+
+/* ---------- the popup ---------- */
+var cur = null; // {text, sentence, card, translation, state}
+function closePop(){ pop.hidden = true; cur = null; clearSel(); }
+function lookup(text, sentence){
+  text = String(text).trim(); if (!text) return;
+  var card = match(text);
+  cur = {text:text, sentence:sentence, card:card, translation:null, state:card ? "known" : "loading"};
+  renderPop();
+  if (!card) translate();
+}
+function translate(){
+  var c = cur; c.state = "loading"; renderPop();
+  if (!navigator.onLine) { c.state = "offline"; renderPop(); return; }
+  sb.functions.invoke("translate", {body:{text:c.text}}).then(function(r){
+    if (c !== cur) return;
+    var d = r.data;
+    if (r.error && r.error.context && typeof r.error.context.json === "function") {
+      return r.error.context.json().then(function(body){ handleTranslate(c, body, r.error.context.status); }, function(){ c.state = "error"; renderPop(); });
+    }
+    handleTranslate(c, d, r.error ? 500 : 200);
+  }).catch(function(){ if (c === cur) { c.state = "error"; renderPop(); } });
+}
+function handleTranslate(c, d, status){
+  if (c !== cur) return;
+  if (d && d.error === "limit") { c.state = "limit"; allowance = 0; updateAllowance(); renderPop(); return; }
+  if (!d || !d.translation) { c.state = "error"; renderPop(); return; }
+  c.translation = d.translation; c.state = "translated";
+  if (!d.member && typeof d.remaining === "number") { allowance = d.remaining; updateAllowance(); }
+  renderPop();
+}
+function updateAllowance(){ var el = $("#allow"); if (el && !hasAccess() && allowance != null) el.textContent = allowance + " free lookup" + (allowance === 1 ? "" : "s") + " left today"; }
+function renderPop(){
+  var c = cur; if (!c) return;
+  var html = '<div class="head"><div class="ar" lang="ar" dir="rtl">' + esc(c.text) + '</div><button class="x" data-act="close" type="button" aria-label="Close">×</button></div>';
+  if (c.state === "known") {
+    var k = c.card;
+    html += '<p class="meaning">' + esc(k.en) + '</p><p class="sub">' + (k.mine ? "In your saved words" : "In your flashcards") + ' · ' + LV[k.lv] + ' ' + TY[k.ty] + ' · ' + stage(k) +
+      (normKey(k.ar) !== normKey(c.text) ? ' · listed as <span lang="ar" style="font-family:var(--ar)">' + esc(k.ar) + '</span>' : "") + '</p>' +
+      '<div class="row"><button class="link" data-act="translate" type="button">Translate this exact form</button></div>';
+  } else if (c.state === "loading") html += '<p class="sub">Looking it up…</p>';
+  else if (c.state === "offline") html += '<p class="sub">You\'re offline. Words already in your flashcards still show their meaning; new words need a connection.</p>';
+  else if (c.state === "error") html += '<p class="sub">Couldn\'t translate that just now. Try again in a moment.</p><div class="row"><button class="btn small" data-act="translate" type="button">Try again</button></div>';
+  else if (c.state === "limit") html += '<p class="meaning">That\'s today\'s ' + FREE_LOOKUPS + ' free lookups</p><p class="sub">Members get unlimited lookups and the whole library. Words already in your flashcards still work.</p>' +
+    '<div class="row"><button class="btn primary" data-act="subscribe" type="button">Subscribe' + (CFG.priceLabel ? " · " + esc(CFG.priceLabel) : "") + '</button></div>';
+  else if (c.state === "translated" || c.state === "saving" || c.state === "saved" || c.state === "save-error") {
+    html += '<p class="meaning">' + esc(c.translation) + '</p><p class="sub">Machine translation' + (c.text.indexOf(" ") > -1 ? " of the phrase" : "") + '</p>';
+    if (c.state === "saved") html += '<p class="sub" style="color:var(--known);font-weight:600">' + esc(c.savedMsg) + '</p>';
+    else if (c.state === "save-error") html += '<p class="sub" style="color:var(--wrong)">' + esc(c.saveMsg) + '</p>';
+    if (c.state !== "saved") {
+      html += (c.editing ? '<input class="edit" id="editMeaning" value="' + esc(c.edited != null ? c.edited : c.translation) + '" aria-label="Meaning to save">' : "") +
+        '<div class="row"><button class="btn primary" data-act="save" type="button"' + (c.state === "saving" ? " disabled" : "") + '>' + (c.state === "saving" ? "Saving…" : "Add to my flashcards") + '</button>' +
+        (c.editing ? "" : '<button class="link" data-act="edit" type="button">Edit meaning</button>') + '</div>';
+    }
+  }
+  html += '<div class="row" style="margin-top:10px"><button class="listen" data-act="speak" type="button">Listen</button></div>';
+  pop.innerHTML = html; pop.hidden = false;
+}
+pop.addEventListener("click", function(e){
+  var a = e.target.closest("[data-act]"); if (!a || !cur) return;
+  var act = a.dataset.act;
+  if (act === "close") return closePop();
+  if (act === "translate") return translate();
+  if (act === "speak") return speak(cur.text);
+  if (act === "edit") { cur.editing = true; renderPop(); var i = $("#editMeaning"); if (i) i.focus(); return; }
+  if (act === "subscribe") return subscribe(a);
+  if (act === "save") return save();
+});
+pop.addEventListener("input", function(e){ if (e.target.id === "editMeaning" && cur) cur.edited = e.target.value; });
+document.addEventListener("keydown", function(e){ if (e.key === "Escape") closePop(); });
+function save(){
+  var c = cur;
+  var english = (c.edited != null ? c.edited : c.translation || "").trim();
+  if (!english) { c.state = "save-error"; c.saveMsg = "Add a meaning first."; renderPop(); return; }
+  c.state = "saving"; renderPop();
+  sb.functions.invoke("save-word", {body:{arabic:c.text, english:english, english_edited:c.edited != null && c.edited.trim() !== c.translation, sentence:c.sentence}}).then(function(r){
+    if (r.error && r.error.context && typeof r.error.context.json === "function") return r.error.context.json().then(function(b){ return {data:b}; }, function(){ return {data:null}; });
+    return r;
+  }).then(function(r){
+    if (c !== cur) return;
+    var d = r.data;
+    if (d && d.card) {
+      var card = toCard(d.card);
+      if (!cards.some(function(x){ return x.id === card.id; })) { cards.push(card); lsSet(ukey("cards"), cards); indexCards(); }
+      c.state = "saved";
+      c.savedMsg = d.already ? "Already in your saved words." : "Saved as " + LV[card.lv] + " " + TY[card.ty] + ": " + card.en + ". It will come up in your flashcards.";
+      refreshUnderlines();
+    } else {
+      c.state = "save-error";
+      c.saveMsg = d && d.error === "limit" ? "You've saved today's free words. Members can save many more." : d && d.error === "already saved" ? "Already in your saved words." : "Couldn't save it: " + ((d && d.error) || "please try again.");
+    }
+    renderPop();
+  }).catch(function(){ if (c === cur) { c.state = "save-error"; c.saveMsg = "Couldn't save it. Check you're online and try again."; renderPop(); } });
+}
+
+/* ---------- small helpers shared with the flashcards ---------- */
+var arVoice = null;
+function pickVoice(){ if (!("speechSynthesis" in window)) return; arVoice = window.speechSynthesis.getVoices().filter(function(x){ return /^ar/i.test(x.lang); })[0] || null; }
+pickVoice(); if ("speechSynthesis" in window) window.speechSynthesis.onvoiceschanged = pickVoice;
+function speak(text){
+  if (!arVoice) { toast("Your device has no Arabic voice installed."); return; }
+  try { window.speechSynthesis.cancel(); var u = new SpeechSynthesisUtterance(text); u.voice = arVoice; u.lang = arVoice.lang; u.rate = 0.85; window.speechSynthesis.speak(u); } catch (e) {}
+}
+function subscribe(btn){
+  if (!CFG.paymentsEnabled) { toast("Subscriptions are opening soon."); return; }
+  if (btn) btn.disabled = true;
+  var back = location.origin + location.pathname.replace(/read(\.html)?$/, "");
+  sb.functions.invoke("create-checkout", {body:{success_url:back + "?checkout=success", return_url:location.href}}).then(function(r){
+    if (r.error || !r.data || !r.data.url) throw r.error || new Error("no url");
+    location.href = r.data.url;
+  }).catch(function(){ toast("Couldn't open checkout. Please try again in a minute."); if (btn) btn.disabled = false; });
+}
+var toastEl = null, toastTimer = null;
+function toast(msg){
+  if (!toastEl) { toastEl = document.createElement("div"); toastEl.setAttribute("role", "status"); toastEl.style.cssText = "position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translateX(-50%);max-width:calc(100% - 32px);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:12px;font-size:.92rem;z-index:30"; document.body.appendChild(toastEl); }
+  toastEl.textContent = msg; toastEl.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(function(){ toastEl.hidden = true; }, 4500);
+}
+
+/* ---------- routing ---------- */
+function route(){
+  var m = /^#t=([\w-]+)$/.exec(location.hash);
+  if (m) {
+    main.innerHTML = '<div class="panel"><p>Loading the text…</p></div>';
+    getText(m[1]).then(renderText);
+  } else renderHome();
+}
+window.addEventListener("hashchange", route);
+
+sb.auth.getSession().then(function(r){
+  var s = r.data && r.data.session;
+  var stored = null;
+  if (!s) { try { var ref = new URL(CFG.supabaseUrl).hostname.split(".")[0]; var t = JSON.parse(localStorage.getItem("sb-" + ref + "-auth-token")); stored = t && t.user; } catch (e) {} }
+  if (!s && !(stored && !navigator.onLine)) { location.replace("./"); return; }
+  user = s ? s.user : stored;
+  loadCached();
+  var access = CFG.readerAccess || "off";
+  // Known not allowed already (switched off, or a cached non-admin profile): back to the flashcards.
+  if (access === "off" || (access === "admin" && profile && profile.role !== "admin")) { location.replace("./"); return; }
+  var shown = readerAllowed();
+  var idx = lsGet(ukey("read-index"));
+  if (idx) { library = idx.library || []; readable = new Set(idx.readable || []); mine = idx.mine || []; }
+  if (shown) route();
+  loadRemote().then(function(){
+    if (!readerAllowed()) { location.replace("./"); return; }
+    if (!shown) route();
+    else if (!/^#t=/.test(location.hash)) renderHome(); else refreshUnderlines();
+  }).catch(function(err){ console.warn(err); if (!idx) main.innerHTML = '<div class="panel"><p>Couldn\'t load. Check your connection and reload.</p></div>'; });
+});
+})();

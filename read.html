@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Read · Breathe Arabic</title>
+<meta name="description" content="Read Arabic texts, tap any word for its meaning, and save new words to your Breathe Arabic flashcards.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#F2F3EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10151F" media="(prefers-color-scheme: dark)">
+<script>
+(function(){
+  var installed = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+  if (!installed) return;
+  document.documentElement.setAttribute("data-theme", "dark");
+  var metas = document.querySelectorAll('meta[name="theme-color"]');
+  for (var i = 0; i < metas.length; i++) { metas[i].setAttribute("content", "#10151F"); metas[i].removeAttribute("media"); }
+})();
+</script>
+<link rel="icon" type="image/png" href="icons/favicon-64.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Breathe Arabic">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F2F3EE; --surface:#FFFFFF; --ink:#18233A; --muted:#5A6377; --line:#D7DAD0;
+  --lapis:#2546A8; --lapis-ink:#FFFFFF; --lapis-soft:rgba(37,70,168,.09);
+  --known:#1D7A64; --known-soft:rgba(29,122,100,.22);
+  --learning:#A86A0E; --learning-soft:rgba(185,120,26,.14);
+  --wrong:#B3261E; --wrong-soft:rgba(179,38,30,.10);
+  --step:#E4E6DE;
+  --ar:"Amiri","Noto Naskh Arabic","Geeza Pro","Traditional Arabic","Times New Roman",serif;
+  --ui:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  color-scheme:light; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#10151F; --surface:#182031; --ink:#E7EAF1; --muted:#9BA4B6; --line:#2A3448;
+    --lapis:#93A9FF; --lapis-ink:#0E1424; --lapis-soft:rgba(147,169,255,.12);
+    --known:#4FC2A2; --known-soft:rgba(79,194,162,.24);
+    --learning:#E3A93F; --learning-soft:rgba(227,169,63,.16);
+    --wrong:#FF8A80; --wrong-soft:rgba(255,138,128,.13);
+    --step:#1E283A; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#10151F; --surface:#182031; --ink:#E7EAF1; --muted:#9BA4B6; --line:#2A3448;
+  --lapis:#93A9FF; --lapis-ink:#0E1424; --lapis-soft:rgba(147,169,255,.12);
+  --known:#4FC2A2; --known-soft:rgba(79,194,162,.24);
+  --learning:#E3A93F; --learning-soft:rgba(227,169,63,.16);
+  --wrong:#FF8A80; --wrong-soft:rgba(255,138,128,.13);
+  --step:#1E283A; color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;background:var(--paper)}
+body{margin:0;min-height:100%;background:var(--paper);color:var(--ink);font-family:var(--ui);font-size:16px;line-height:1.5;-webkit-text-size-adjust:100%}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2.5px solid var(--lapis);outline-offset:2px}
+[hidden]{display:none!important}
+a{color:var(--lapis)}
+.wrap{max-width:760px;margin:0 auto;padding:24px 20px 120px}
+.top{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.top .logo{flex:none;width:52px;height:52px;border-radius:12px;display:block}
+.top h1{margin:0;font-size:1.35rem;font-weight:600;line-height:1.2}
+.top p{margin:2px 0 0;color:var(--muted);font-size:.9rem}
+.top .nav{margin-left:auto;display:flex;gap:8px}
+.pillnav{border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-weight:600;font-size:.9rem;text-decoration:none;color:var(--ink);background:var(--surface)}
+.btn{border:1.5px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 16px;font-weight:600;font-size:.95rem}
+.btn.primary{background:var(--lapis);border-color:var(--lapis);color:var(--lapis-ink)}
+.btn.small{padding:6px 12px;font-size:.85rem;border-radius:10px}
+.btn:disabled{opacity:.55;cursor:default}
+.link{background:none;border:0;padding:2px 0;color:var(--lapis);font-weight:500;text-decoration:underline;text-underline-offset:3px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:16px}
+.panel h2{margin:0 0 4px;font-size:1.05rem;font-weight:600}
+.panel > p{margin:0 0 10px;color:var(--muted);font-size:.92rem}
+.list{display:grid;gap:8px}
+.item{display:flex;align-items:center;gap:12px;justify-content:space-between;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--paper);text-align:left;width:100%}
+.item .t{font-weight:600}
+.item small{color:var(--muted);font-size:.8rem}
+.item.locked{opacity:.7}
+.tag{font-size:.75rem;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--lapis-soft);color:var(--lapis);white-space:nowrap}
+.tag.free{background:var(--known-soft);color:var(--known)}
+.paste label{display:block;font-size:.88rem;color:var(--muted);margin:8px 0 4px}
+.paste input,.paste textarea{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 11px}
+.paste textarea{min-height:140px;font-family:var(--ar);font-size:1.25rem;line-height:1.8;direction:rtl}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.msg{font-size:.9rem;color:var(--muted)} .msg.bad{color:var(--wrong)}
+/* reader */
+.reader-head{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap}
+.reader-head h2{margin:0;font-size:1.15rem}
+.text{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px 20px;font-family:var(--ar);direction:rtl;text-align:right;font-size:clamp(1.45rem,4.6vw,1.8rem);line-height:2.15;word-spacing:.06em;-webkit-user-select:text;user-select:text}
+.text p{margin:0 0 .7em}
+.w{border-radius:6px;padding:0 .04em;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background-color .12s}
+.w:hover{background:var(--lapis-soft)}
+.w.k2{box-shadow:inset 0 -2px 0 var(--known)}
+.w.k1{box-shadow:inset 0 -2px 0 var(--learning)}
+.w.k0{box-shadow:inset 0 -2px 0 color-mix(in srgb,var(--lapis) 45%,transparent)}
+.w.sel{background:var(--lapis-soft);box-shadow:inset 0 -2px 0 var(--lapis)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.82rem;color:var(--muted);margin:10px 2px 0}
+.legend i{display:inline-block;width:14px;height:0;border-bottom:2px solid;vertical-align:middle;margin-right:5px}
+.allow{font-size:.85rem;color:var(--muted)}
+/* popup */
+.pop{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));width:min(560px,calc(100% - 24px));background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:20}
+.pop .ar{font-family:var(--ar);direction:rtl;font-size:1.9rem;line-height:1.5;font-weight:700}
+.pop .head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.pop .x{border:0;background:none;font-size:1.4rem;line-height:1;color:var(--muted);padding:2px 6px}
+.pop .meaning{font-size:1.1rem;font-weight:600;margin:4px 0 2px}
+.pop .sub{color:var(--muted);font-size:.88rem;margin:2px 0 0}
+.pop .edit{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:8px 10px;margin-top:8px}
+.pop .row{margin-top:12px}
+.pop .listen{border:1px solid var(--line);background:transparent;border-radius:999px;padding:3px 11px;font-size:.82rem;color:var(--muted)}
+@media (max-width:520px){ .wrap{padding:18px 14px 140px} .text{padding:18px 14px} .top .logo{width:44px;height:44px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <img class="logo" src="icons/logo-mark-160.png" width="52" height="52" alt="">
+    <div><h1>Read</h1><p>Tap any word for its meaning</p></div>
+    <nav class="nav"><a class="pillnav" href="./">Flashcards</a></nav>
+  </header>
+  <main id="main"><div class="panel"><p>Loading…</p></div></main>
+</div>
+<div class="pop" id="pop" role="dialog" aria-live="polite" hidden></div>
+<script src="config.js"></script>
+<script src="vendor/supabase-js-2.117.2.js"></script>
+<script src="read.js"></script>
+</body>
+</html>

@@ -159,6 +159,28 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
       <div id="deckReview"></div>
     </section>
 
+    <section class="box" aria-labelledby="libTitle">
+      <h2 id="libTitle">Reading library</h2>
+      <p>Texts for the Read page. Tick "Free" for texts free accounts can read; the rest are for members. Learners tap any word for its meaning and can save it to their flashcards.</p>
+      <div id="libList"></div>
+      <form id="libForm" novalidate style="margin-top:14px;display:grid;gap:8px">
+        <input type="hidden" id="libId">
+        <div class="form" style="grid-template-columns:3fr 1fr auto auto">
+          <label>Title<input type="text" id="libTitleIn" maxlength="200" placeholder="e.g. A visit to the market"></label>
+          <label>Level
+            <select id="libLevel"><option value="">Any</option><option value="1">A1</option><option value="2">A2</option><option value="3">B1</option><option value="4">B2</option><option value="5">C1</option><option value="6">C2</option></select>
+          </label>
+          <label class="notify" style="margin:0"><input type="checkbox" id="libFree"> Free</label>
+          <label class="notify" style="margin:0"><input type="checkbox" id="libPub" checked> Published</label>
+        </div>
+        <label style="font-size:.85rem;color:var(--muted)">Arabic text
+          <textarea id="libBody" dir="rtl" lang="ar" maxlength="20000" style="min-height:180px;font-family:var(--ar);font-size:1.2rem;line-height:1.8"></textarea>
+        </label>
+        <div class="row-actions" style="margin-top:0"><button class="btn primary" type="submit" id="libSave">Add text</button><button class="link" type="button" id="libCancel" hidden>Cancel editing</button></div>
+        <p class="msg" id="libMsg" aria-live="polite"></p>
+      </form>
+    </section>
+
     <section class="box" aria-labelledby="backupTitle">
       <h2 id="backupTitle">Backup</h2>
       <p>Supabase's free plan keeps no backups, so download one every week. It's a single file with every account, membership, card and answer. Keep it somewhere private, such as a folder in your Google Drive; it contains members' email addresses.</p>
@@ -204,7 +226,7 @@ sb.auth.getSession().then(function(r){
   return check(sb.from("profiles").select("role").eq("id", me.id).maybeSingle()).then(function(p){
     if (!p.data || p.data.role !== "admin") { $("#gate").innerHTML = "<p>This page is only for the admin.</p>"; return; }
     $("#gate").hidden = true; $("#admin").hidden = false;
-    loadMembers(); initDeck(); initBackup();
+    loadMembers(); initDeck(); initBackup(); loadLibrary();
   });
 }).catch(function(e){ $("#gate").innerHTML = "<p>Couldn't load: " + esc(e.message) + "</p>"; });
 
@@ -336,7 +358,8 @@ $("#checkSheet").addEventListener("click", function(){
     if (!sheet || !sheet.ok || !sheet.rows) {
       return setMsg(msg, sheet && sheet.error === "no-deck-tab" ? "The sheet has no tab called \"Arabic Vocab\"." : "The script answered, but not with the word list. Update the Apps Script to the latest google-sheet-sync.txt and deploy a new version (SETUP.md, step 7).", "bad");
     }
-    buildReview(sheet, res[1], res[2]);
+    // Learners' saved words (ids "u-…") are theirs, not part of the deck.
+    buildReview(sheet, res[1].filter(function(c){ return !/^u-/.test(c.id); }), res[2]);
     setMsg(msg, "");
     renderReview();
   }).catch(function(err){ setMsg(msg, "Couldn't read the sheet: " + err.message + ". Check the link and that you're online.", "bad"); });
@@ -480,6 +503,52 @@ function publish(){
     $("#deckReview").innerHTML = '<p class="msg ok">Published: ' + esc(parts.join(", ") || "nothing changed") + '. Members see the changes next time they open the app.</p>';
   }).catch(function(err){ setMsg(msg, "Publishing failed: " + err.message + ". Nothing you typed is lost; try again.", "bad"); btn.disabled = false; });
 }
+
+/* ---------- reading library ---------- */
+var libTexts = [];
+function loadLibrary(){
+  check(sb.from("texts").select("id,title,body,level,is_free,published,sort_order,created_at").is("owner_id", null).order("sort_order").order("created_at")).then(function(r){
+    libTexts = r.data || []; renderLibrary();
+  }).catch(function(err){
+    $("#libList").innerHTML = '<p class="msg bad">Couldn\'t load the library: ' + esc(err.message) + '. Have you run supabase/002_reader.sql (SETUP.md)?</p>';
+  });
+}
+function renderLibrary(){
+  if (!libTexts.length) { $("#libList").innerHTML = '<p class="msg">No texts yet. Add the first one below.</p>'; return; }
+  $("#libList").innerHTML = '<div class="tablewrap"><table><thead><tr><th>Title</th><th>Level</th><th>Access</th><th>Words</th><th></th></tr></thead><tbody>' +
+    libTexts.map(function(t){
+      var words = (t.body.match(/[ء-ي]+/g) || []).length;
+      return '<tr><td>' + esc(t.title) + (t.published ? "" : ' <span class="tag">hidden</span>') + '</td><td>' + (t.level ? LV[t.level] : "") + '</td>' +
+        '<td><span class="tag ' + (t.is_free ? "active" : "comp") + '">' + (t.is_free ? "Free" : "Members") + '</span></td><td>' + words + '</td>' +
+        '<td><button class="btn small" data-libedit="' + t.id + '" type="button">Edit</button> <button class="btn small" data-libdel="' + t.id + '" type="button">Delete</button></td></tr>';
+    }).join("") + '</tbody></table></div>';
+}
+function resetLibForm(){
+  $("#libId").value = ""; $("#libTitleIn").value = ""; $("#libLevel").value = ""; $("#libFree").checked = false; $("#libPub").checked = true; $("#libBody").value = "";
+  $("#libSave").textContent = "Add text"; $("#libCancel").hidden = true;
+}
+$("#libList").addEventListener("click", function(e){
+  var ed = e.target.closest("[data-libedit]"), del = e.target.closest("[data-libdel]");
+  if (ed) {
+    var t = libTexts.filter(function(x){ return x.id === ed.dataset.libedit; })[0]; if (!t) return;
+    $("#libId").value = t.id; $("#libTitleIn").value = t.title; $("#libLevel").value = t.level || ""; $("#libFree").checked = t.is_free; $("#libPub").checked = t.published; $("#libBody").value = t.body;
+    $("#libSave").textContent = "Save changes"; $("#libCancel").hidden = false; $("#libTitleIn").focus();
+  }
+  if (del && confirm("Delete this text? Learners' saved words from it stay in their flashcards.")) {
+    check(sb.from("texts").delete().eq("id", del.dataset.libdel)).then(loadLibrary).catch(function(err){ setMsg($("#libMsg"), "Couldn't delete: " + err.message, "bad"); });
+  }
+});
+$("#libCancel").addEventListener("click", resetLibForm);
+$("#libForm").addEventListener("submit", function(e){
+  e.preventDefault();
+  var id = $("#libId").value, title = $("#libTitleIn").value.trim(), body = $("#libBody").value.trim();
+  if (!title || !/[ء-ي]/.test(body)) return setMsg($("#libMsg"), "Add a title and some Arabic text.", "bad");
+  var row = {title:title, body:body, level:$("#libLevel").value ? +$("#libLevel").value : null, is_free:$("#libFree").checked, published:$("#libPub").checked, updated_at:new Date().toISOString()};
+  setMsg($("#libMsg"), "Saving…");
+  var q = id ? sb.from("texts").update(row).eq("id", id) : sb.from("texts").insert(Object.assign({owner_id:null, sort_order:libTexts.length * 10}, row));
+  check(q).then(function(){ setMsg($("#libMsg"), id ? "Saved." : "Added. Learners see it on the Read page.", "ok"); resetLibForm(); loadLibrary(); })
+    .catch(function(err){ setMsg($("#libMsg"), "Couldn't save: " + err.message, "bad"); });
+});
 
 /* ---------- backup ---------- */
 function initBackup(){

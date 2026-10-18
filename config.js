@@ -10,5 +10,7 @@ window.ARVOCAB_CONFIG = {
   // Turn on once Polar is set up (milestone 3). While false, Subscribe buttons say "coming soon".
   paymentsEnabled: true,
   // Shown next to Subscribe buttons, e.g. "£4.99 a month". Leave empty to show no price.
-  priceLabel: "$5 a month"
+  priceLabel: "$5 a month",
+  // Who can use the Read page: "admin" (only you, for testing), "everyone", or "off".
+  readerAccess: "admin"
 };

@@ -128,6 +128,8 @@ function isAuthError(e){ return e && (e.code === "PGRST301" || e.status === 401 
 /* ---------- loading from the cloud ---------- */
 function toCard(r){ return {id:r.id, ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, ex:Array.isArray(r.examples) ? r.examples : [], so:r.sort_order, free:r.is_free}; }
 function setCards(list){
+  // Words saved on the Read page have ids starting "u-".
+  list.forEach(function(c){ c.mine = /^u-/.test(c.id); });
   CARDS = list.slice().sort(function(a, b){ return a.so - b.so; });
   byId = new Map(CARDS.map(function(c){ return [c.id, c]; }));
 }
@@ -212,15 +214,17 @@ function hasAccess(){
   if ((m.status === "canceled" || m.status === "past_due") && end != null && end > now) return true;
   return false;
 }
+// Deck counts leave out the learner's own saved words (from the Read page).
+function deckVisible(lv){ return CARDS.filter(function(c){ return c.lv === lv && !c.mine; }).length; }
+function mineCount(lv){ return CARDS.filter(function(c){ return c.lv === lv && c.mine; }).length; }
 function levelTotal(lv){
   var s = summary.filter(function(x){ return x.level === lv; })[0];
-  var visible = CARDS.filter(function(c){ return c.lv === lv; }).length;
-  return Math.max(s ? s.total : 0, visible);
+  return Math.max(s ? s.total : 0, deckVisible(lv));
 }
 // A level is locked when the deck has words there that this account can't see.
-function isLocked(lv){ return levelTotal(lv) > CARDS.filter(function(c){ return c.lv === lv; }).length; }
+function isLocked(lv){ return prefs.source !== "mine" && levelTotal(lv) > deckVisible(lv); }
 function lockedSelected(){ return prefs.levels.filter(isLocked).sort(); }
-function lockedWordCount(levels){ return levels.reduce(function(n, lv){ return n + levelTotal(lv) - CARDS.filter(function(c){ return c.lv === lv; }).length; }, 0); }
+function lockedWordCount(levels){ return levels.reduce(function(n, lv){ return n + levelTotal(lv) - deckVisible(lv); }, 0); }
 
 /* ---------- queues ---------- */
 function typeOk(c){
@@ -228,7 +232,7 @@ function typeOk(c){
   if (prefs.type === "other") return c.ty === "d" || c.ty === "r";
   return c.ty === prefs.type;
 }
-function pool(){ return CARDS.filter(function(c){ return prefs.levels.indexOf(c.lv) > -1 && typeOk(c); }); }
+function pool(){ return CARDS.filter(function(c){ return prefs.levels.indexOf(c.lv) > -1 && typeOk(c) && (prefs.source !== "mine" || c.mine); }); }
 function levelNames(){ return prefs.levels.slice().sort().map(function(l){ return LV[l]; }); }
 function levelLabel(cap){ return prefs.levels.length >= 6 ? (cap ? "All levels" : "all levels") : joinNames(levelNames()); }
 function joinNames(a){ return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
@@ -294,8 +298,8 @@ function renderStairs(){
   var steps = stairs.querySelectorAll(".step");
   for (var k = 0; k < steps.length; k++) {
     var b = steps[k], lv = +b.dataset.lv;
-    var cs = CARDS.filter(function(c){ return c.lv === lv; });
-    var total = levelTotal(lv), locked = isLocked(lv);
+    var cs = CARDS.filter(function(c){ return c.lv === lv && (prefs.source !== "mine" || c.mine); });
+    var total = prefs.source === "mine" ? mineCount(lv) : levelTotal(lv) + mineCount(lv), locked = isLocked(lv);
     var learned = cs.filter(function(c){ var s = state(c.id); return s && s.st === 2; }).length;
     var pct = total ? Math.round(learned / total * 100) : 0;
     b.style.setProperty("--fill", pct + "%");
@@ -303,7 +307,7 @@ function renderStairs(){
     b.querySelector(".ct").textContent = locked ? "Members" : learned + "/" + total;
     b.setAttribute("aria-pressed", prefs.levels.indexOf(lv) > -1 ? "true" : "false");
     b.setAttribute("aria-label", LV[lv] + ": " + total + " words, " + (locked ? "members only" : learned + " learned"));
-    b.disabled = !total;
+    b.disabled = !total && prefs.source !== "mine";
   }
   var q = queueInfo(Date.now());
   var due = q.learnDue.length + q.revDue.length;
@@ -347,6 +351,9 @@ typeSel.value = prefs.type; dirSel.value = prefs.dir; newSel.value = String(pref
 typeSel.addEventListener("change", function(){ prefs.type = this.value; savePrefs(); onFilterChange(); });
 dirSel.addEventListener("change", function(){ prefs.dir = this.value; savePrefs(); if (prefs.mode === "cards") renderCard(); if (qz.qs && qz.i < qz.qs.length) renderQuestion(); });
 newSel.addEventListener("change", function(){ prefs.newPerDay = +this.value; savePrefs(); fc.cur = null; renderStairs(); renderCard(); });
+var srcSel = $("#srcSel");
+srcSel.value = prefs.source === "mine" ? "mine" : "all";
+srcSel.addEventListener("change", function(){ prefs.source = this.value; savePrefs(); onFilterChange(); });
 function onFilterChange(){
   renderStairs();
   fc.cur = null; fc.revealed = false;
@@ -527,7 +534,9 @@ function renderCard(){
     var html = '<div class="meta">' + countsHtml + '<span class="meta-right">' + undoHtml + '</span></div>';
     if (onlyLockedChosen()) { el.innerHTML = html + membersOnlyHtml(); return; }
     if (!q.pool.length) {
-      el.innerHTML = html + '<div class="panel-msg"><h2>No words match</h2><p>Try another word type or add a level above.</p></div>';
+      el.innerHTML = html + (prefs.source === "mine" && !CARDS.some(function(c){ return c.mine; })
+        ? '<div class="panel-msg"><h2>No saved words yet</h2><p>On the Read page, tap a word you don\'t know and choose Add to my flashcards. It will show up here.</p><div class="actions single"><a class="btn primary" href="read">Open Read</a></div></div>'
+        : '<div class="panel-msg"><h2>No words match</h2><p>Try another word type or add a level above.</p></div>');
       return;
     }
     var lines = [];
@@ -760,12 +769,14 @@ function renderList(){
       var label = !s ? "New" : s.st === 2 ? "Learned" : "Learning";
       html += '<div class="row" data-id="' + c.id + '"><div class="row-main">' +
         '<span class="dot s' + cls + '" role="img" aria-label="' + label + '"></span>' +
-        '<button class="row-en" data-act="open" type="button" aria-expanded="' + (!!openRows[c.id]) + '">' + esc(c.en) + '<small>' + TY[c.ty] + ', ' + sub + '</small></button>' +
+        '<button class="row-en" data-act="open" type="button" aria-expanded="' + (!!openRows[c.id]) + '">' + esc(c.en) + '<small>' + TY[c.ty] + ', ' + sub + (c.mine ? ' · <span class="mine-tag">saved</span>' : "") + '</small></button>' +
         '<div class="row-ar" lang="ar">' + esc(c.ar) + '</div></div>';
       if (openRows[c.id]) {
         html += '<div class="row-ex">' + (c.ex.length ? exHtml(c, "") : '<p class="ex-en">No example sentence for this one yet.</p>') +
           '<p class="mem">' + esc(memoryLine(c.id, now)) + '</p>' +
-          (s ? '<button class="btn" data-act="forget" type="button">Reset this word to new</button>' : "") + '</div>';
+          (s ? '<button class="btn" data-act="forget" type="button">Reset this word to new</button>' : "") +
+          (c.mine ? '<div class="mine-tools"><label>Level <select data-act="relevel">' + [1,2,3,4,5,6].map(function(l){ return '<option value="' + l + '"' + (l === c.lv ? " selected" : "") + '>' + LV[l] + '</option>'; }).join("") + '</select></label>' +
+            '<button class="link danger" data-act="unsave" type="button">Remove from my saved words</button></div>' : "") + '</div>';
       }
       html += '</div>';
     });
@@ -778,10 +789,31 @@ $("#list").addEventListener("click", function(e){
   var a = e.target.closest("[data-act]"); if (!a) return;
   if (a.dataset.act === "subscribe") return;
   var id = a.closest(".row").dataset.id;
+  if (a.dataset.act === "relevel") return;
   if (a.dataset.act === "open") openRows[id] = !openRows[id];
   else if (a.dataset.act === "forget") { delete prog.p[id]; fc.cur = null; fc.undo = null; saveProgress([id]); }
+  else if (a.dataset.act === "unsave") return unsave(id, a);
   renderList();
 });
+$("#list").addEventListener("change", function(e){
+  if (e.target.dataset.act !== "relevel") return;
+  var id = e.target.closest(".row").dataset.id, c = byId.get(id), lv = +e.target.value;
+  if (!c || !navigator.onLine) { toast("You need to be online to change a level."); return renderList(); }
+  check(sb.from("cards").update({level:lv, updated_at:new Date().toISOString()}).eq("id", id)).then(function(){
+    c.lv = lv; lsSet(ukey("cards"), CARDS); renderStairs(); renderList();
+  }).catch(function(){ toast("Couldn't change the level. Please try again."); renderList(); });
+});
+// Saved words (from the Read page) can be deleted; their progress goes with them.
+function unsave(id, btn){
+  if (btn.dataset.armed !== "1") { btn.dataset.armed = "1"; btn.textContent = "Tap again to remove it"; return; }
+  if (!navigator.onLine) { toast("You need to be online to remove a word."); return; }
+  check(sb.from("cards").delete().eq("id", id)).then(function(){
+    delete prog.p[id]; delete outbox.up[id]; delete outbox.del[id];
+    setCards(CARDS.filter(function(c){ return c.id !== id; }));
+    lsSet(ukey("cards"), CARDS); saveLocal();
+    fc.cur = null; fc.undo = null; renderAll();
+  }).catch(function(){ toast("Couldn't remove it. Please try again."); });
+}
 
 /* ---------- keyboard ---------- */
 document.addEventListener("keydown", function(e){
@@ -938,7 +970,7 @@ function showLoadError(){
 var signin = {email:"", sent:false, busy:false, msg:"", bad:false};
 function showSignedOut(){
   user = null; profile = null; member = null; CARDS = []; byId = new Map(); prog.p = {}; importState = null;
-  $("#appMain").hidden = true; $("#signin").hidden = false; $(".top p").hidden = true;
+  $("#appMain").hidden = true; $("#signin").hidden = false; $(".top p").hidden = true; $("#topnav").hidden = true;
   renderSignin();
 }
 function renderSignin(){
@@ -1055,8 +1087,17 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || location.
 }
 if (navigator.storage && navigator.storage.persist) { try { navigator.storage.persist().catch(function(){}); } catch (e) {} }
 
+// The Read page can be switched on for admins only (for testing) or everyone, in config.js.
+function readerAllowed(){
+  var access = CFG.readerAccess || "off";
+  return access === "everyone" || (access === "admin" && !!profile && profile.role === "admin");
+}
 function renderAll(){
-  $(".top p").hidden = false;
+  var reader = readerAllowed();
+  $(".top p").hidden = false; $("#topnav").hidden = !reader;
+  // Saved words only exist once someone has used the Read page.
+  $("#srcWrap").hidden = !reader && !CARDS.some(function(c){ return c.mine; });
+  if ($("#srcWrap").hidden && prefs.source === "mine") { prefs.source = "all"; $("#srcSel").value = "all"; savePrefs(); }
   $("#total").textContent = summary.length ? summary.reduce(function(n, s){ return n + s.total; }, 0) : CARDS.length;
   renderStairs();
   renderAccount();
