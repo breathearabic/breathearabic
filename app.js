@@ -1,0 +1,1094 @@
+(function(){
+"use strict";
+var CFG = window.ARVOCAB_CONFIG || {};
+var LV = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
+var TY = {n:"noun", v:"verb", a:"adjective", d:"adverb", p:"phrase", r:"particle"};
+var CARDS = [], byId = new Map();
+var $ = function(s){ return document.querySelector(s); };
+var DAY = 86400000, MINUTE = 60000, ROLLOVER = 4, LEARN_AHEAD = 20 * MINUTE;
+var PAGE = 1000;
+
+function esc(s){ return String(s).replace(/[&<>"']/g, function(ch){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]; }); }
+function shuffle(a){ for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+function norm(s){ return String(s).replace(/[ً-ْٰـ]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").toLowerCase(); }
+function lsGet(k){ try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function lsDel(k){ try { localStorage.removeItem(k); } catch (e) {} }
+
+/* ---------- study days (a new day starts at 4am, like Anki) ---------- */
+function dayStart(ms){ var d = new Date(ms); d.setHours(ROLLOVER, 0, 0, 0); if (d.getTime() > ms) d.setDate(d.getDate() - 1); return d.getTime(); }
+function dayNum(ms){ var d = new Date(dayStart(ms)); return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY); }
+function addDays(ms, n){ var d = new Date(dayStart(ms)); d.setDate(d.getDate() + n); return d.getTime(); }
+var sched = makeScheduler({
+  elapsed: function(last, now){ return dayNum(now) - dayNum(last); },
+  reviewDue: function(now, days){ return addDays(now, days); },
+  fuzz: true
+});
+
+/* ---------- Supabase ---------- */
+var configured = !!(CFG.supabaseUrl && CFG.supabaseKey && window.supabase);
+var sb = configured ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, {
+  auth: {persistSession: true, autoRefreshToken: true, detectSessionInUrl: true}
+}) : null;
+var user = null;          // {id, email}
+var profile = null;       // {role, ...}
+var member = null;        // row from memberships
+var summary = [];         // [{level, total, free}] from deck_summary()
+function ukey(k){ return "arvocab-u:" + user.id + ":" + k; }
+
+/* ---------- preferences and progress ---------- */
+var PREF_KEY = "arvocab-prefs-v1", LEGACY_PROG_KEY = "arvocab-progress-v1", LEGACY_SYNC_KEY = "arvocab-sync-url";
+var prefs = Object.assign({levels:[1,2,3,4,5,6], mode:"cards", type:"all", dir:"ar", qlen:10, newPerDay:20, extra:null}, lsGet(PREF_KEY) || {});
+prefs.levels = (prefs.levels || []).filter(function(l){ return l >= 1 && l <= 6; });
+if (!prefs.levels.length || !prefs.allLevelsDefault) { prefs.levels = [1,2,3,4,5,6]; prefs.allLevelsDefault = true; lsSet(PREF_KEY, prefs); }
+function savePrefs(){ lsSet(PREF_KEY, prefs); }
+
+function validState(s){
+  return s && typeof s === "object" && (s.st === 1 || s.st === 2 || s.st === 3) && typeof s.s === "number" && s.s > 0 &&
+    typeof s.d === "number" && typeof s.due === "number" && (s.last == null || typeof s.last === "number");
+}
+// Older versions stored 1 (still learning) or 2 (known); turn those into memory states.
+function migrateValue(v, now){
+  if (v === 2) return {st:2, stp:null, s:sched.initS(3), d:sched.initD(3, true), last:now, due:addDays(now, sched.nextInterval(sched.initS(3))), r:1, l:0, f:0};
+  if (v === 1) return {st:1, stp:0, s:sched.initS(1), d:sched.initD(1, true), last:now, due:now, r:1, l:0, f:0};
+  return validState(v) ? v : null;
+}
+function migrateMap(p){
+  var out = {}, now = Date.now();
+  Object.keys(p || {}).forEach(function(id){ if (byId.has(id)) { var s = migrateValue(p[id], now); if (s) out[id] = s; } });
+  return out;
+}
+var prog = {p:{}};
+function state(id){ return prog.p[id] || null; }
+
+/* Changes not yet saved to the cloud. Kept on the device so nothing is lost offline.
+   up: card id -> state to upsert, del: card id -> true, logs: answers for review_log, wipe: delete everything first. */
+var outbox = {up:{}, del:{}, logs:[], wipe:false};
+var outboxVer = 0, flushTimer = null, flushing = false, flushAgain = false, lastSaved = 0, saveError = false;
+function outboxEmpty(){ return !outbox.wipe && !Object.keys(outbox.up).length && !Object.keys(outbox.del).length && !outbox.logs.length; }
+function saveLocal(){ if (!user) return; lsSet(ukey("prog"), prog.p); lsSet(ukey("outbox"), outbox); }
+function queueCard(id){
+  if (prog.p[id]) { outbox.up[id] = prog.p[id]; delete outbox.del[id]; }
+  else { delete outbox.up[id]; outbox.del[id] = true; }
+}
+function queueLog(id, g, at){ outbox.logs.push({card_id:id, rating:g, reviewed_at:new Date(at).toISOString()}); }
+function saveProgress(ids){
+  (ids || []).forEach(queueCard);
+  outboxVer++;
+  saveLocal();
+  renderStairs();
+  scheduleFlush(1500);
+}
+function scheduleFlush(ms){ clearTimeout(flushTimer); flushTimer = setTimeout(flush, ms); setSaveStatus(); }
+
+function flush(){
+  if (!user || !sb || outboxEmpty()) { setSaveStatus(); return Promise.resolve(); }
+  if (!navigator.onLine) { setSaveStatus(); return Promise.resolve(); }
+  if (flushing) { flushAgain = true; return Promise.resolve(); }
+  flushing = true; setSaveStatus("saving");
+  var snap = JSON.parse(JSON.stringify(outbox));
+  var uid = user.id, nowIso = new Date().toISOString();
+  var chain = Promise.resolve();
+  if (snap.wipe) chain = chain.then(function(){ return check(sb.from("progress").delete().eq("user_id", uid)); });
+  var delIds = Object.keys(snap.del);
+  if (delIds.length) chain = chain.then(function(){ return check(sb.from("progress").delete().eq("user_id", uid).in("card_id", delIds)); });
+  var rows = Object.keys(snap.up).map(function(id){
+    var s = snap.up[id];
+    return {user_id:uid, card_id:id, state:s, due:new Date(s.due).toISOString(), updated_at:nowIso};
+  });
+  for (var i = 0; i < rows.length; i += 500) (function(part){
+    chain = chain.then(function(){ return check(sb.from("progress").upsert(part, {onConflict:"user_id,card_id"})); });
+  })(rows.slice(i, i + 500));
+  if (snap.logs.length) chain = chain.then(function(){
+    return check(sb.from("review_log").insert(snap.logs.map(function(l){ return {user_id:uid, card_id:l.card_id, rating:l.rating, reviewed_at:l.reviewed_at}; })));
+  });
+  return chain.then(function(){
+    // Remove what was sent, unless it changed again while we were sending.
+    delIds.forEach(function(id){ if (outbox.del[id]) delete outbox.del[id]; });
+    Object.keys(snap.up).forEach(function(id){ if (JSON.stringify(outbox.up[id]) === JSON.stringify(snap.up[id])) delete outbox.up[id]; });
+    outbox.logs.splice(0, snap.logs.length);
+    // A reset made while this was sending sets a newer wipe stamp; keep that one.
+    if (snap.wipe && outbox.wipe === snap.wipe) outbox.wipe = false;
+    saveLocal();
+    saveError = false; lastSaved = Date.now();
+  }).catch(function(err){
+    saveError = true;
+    console.warn("Saving progress failed", err);
+    if (isAuthError(err)) { setSaveStatus("auth"); return; }
+    clearTimeout(flushTimer); flushTimer = setTimeout(flush, 30000);
+  }).then(function(){
+    flushing = false;
+    if (flushAgain) { flushAgain = false; flush(); }
+    setSaveStatus();
+  });
+}
+function check(q){ return q.then(function(r){ if (r.error) throw r.error; return r; }); }
+function isAuthError(e){ return e && (e.code === "PGRST301" || e.status === 401 || /JWT/i.test(e.message || "")); }
+
+/* ---------- loading from the cloud ---------- */
+function toCard(r){ return {id:r.id, ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, ex:Array.isArray(r.examples) ? r.examples : [], so:r.sort_order, free:r.is_free}; }
+function setCards(list){
+  CARDS = list.slice().sort(function(a, b){ return a.so - b.so; });
+  byId = new Map(CARDS.map(function(c){ return [c.id, c]; }));
+}
+function fetchAll(table, cols, order){
+  var out = [];
+  function page(from){
+    var q = sb.from(table).select(cols).order(order, {ascending:true}).range(from, from + PAGE - 1);
+    return check(q).then(function(r){
+      out = out.concat(r.data || []);
+      return r.data && r.data.length === PAGE ? page(from + PAGE) : out;
+    });
+  }
+  return page(0);
+}
+function loadRemote(){
+  var uid = user.id;
+  return Promise.all([
+    fetchAll("cards", "id,level,word_type,arabic,english,examples,sort_order,is_free", "sort_order"),
+    fetchAll("progress", "card_id,state", "card_id"),
+    check(sb.from("memberships").select("*").eq("user_id", uid).maybeSingle()),
+    check(sb.from("profiles").select("id,email,display_name,role").eq("id", uid).maybeSingle()),
+    check(sb.rpc("deck_summary"))
+  ]).then(function(res){
+    if (!user || user.id !== uid) return;
+    setCards(res[0].map(toCard));
+    var p = {};
+    res[1].forEach(function(r){ if (byId.has(r.card_id) && validState(r.state)) p[r.card_id] = r.state; });
+    // Answers still waiting to be sent win over what the server has.
+    if (outbox.wipe) p = {};
+    Object.keys(outbox.del).forEach(function(id){ delete p[id]; });
+    Object.keys(outbox.up).forEach(function(id){ p[id] = outbox.up[id]; });
+    prog.p = p;
+    serverProgressCount = res[1].length;
+    member = res[2].data || null;
+    profile = res[3].data || null;
+    summary = (res[4].data || []).map(function(s){ return {level:+s.level, total:+s.total, free:+s.free}; });
+    lsSet(ukey("cards"), CARDS);
+    lsSet(ukey("member"), member);
+    lsSet(ukey("profile"), profile);
+    lsSet(ukey("summary"), summary);
+    lsSet(ukey("loadedAt"), Date.now());
+    saveLocal();
+    loadedOnline = true;
+  });
+}
+var serverProgressCount = -1, loadedOnline = false, lastPull = 0;
+function loadCached(){
+  var cards = lsGet(ukey("cards"));
+  if (!cards || !cards.length) return false;
+  setCards(cards);
+  member = lsGet(ukey("member"));
+  profile = lsGet(ukey("profile"));
+  summary = lsGet(ukey("summary")) || [];
+  outbox = Object.assign({up:{}, del:{}, logs:[], wipe:false}, lsGet(ukey("outbox")) || {});
+  var p = lsGet(ukey("prog")) || {};
+  prog.p = {};
+  Object.keys(p).forEach(function(id){ if (byId.has(id) && validState(p[id])) prog.p[id] = p[id]; });
+  return true;
+}
+function refresh(){
+  if (!user || !navigator.onLine) return Promise.resolve();
+  lastPull = Date.now();
+  return loadRemote().then(function(){
+    if (!fc.revealed) fc.cur = null;
+    renderAll();
+    flush();
+    maybeOfferImport();
+  }).catch(function(err){
+    console.warn("Loading from the cloud failed", err);
+    if (isAuthError(err)) setSaveStatus("auth");
+    else if (!CARDS.length) showLoadError();
+  });
+}
+
+/* ---------- membership and locked levels ---------- */
+function hasAccess(){
+  var m = member;
+  if (profile && profile.role === "admin") return true;
+  if (!m) return false;
+  var end = m.current_period_end ? Date.parse(m.current_period_end) : null, now = Date.now();
+  if ((m.status === "active" || m.status === "comp") && (end == null || end > now)) return true;
+  if ((m.status === "canceled" || m.status === "past_due") && end != null && end > now) return true;
+  return false;
+}
+function levelTotal(lv){
+  var s = summary.filter(function(x){ return x.level === lv; })[0];
+  var visible = CARDS.filter(function(c){ return c.lv === lv; }).length;
+  return Math.max(s ? s.total : 0, visible);
+}
+// A level is locked when the deck has words there that this account can't see.
+function isLocked(lv){ return levelTotal(lv) > CARDS.filter(function(c){ return c.lv === lv; }).length; }
+function lockedSelected(){ return prefs.levels.filter(isLocked).sort(); }
+function lockedWordCount(levels){ return levels.reduce(function(n, lv){ return n + levelTotal(lv) - CARDS.filter(function(c){ return c.lv === lv; }).length; }, 0); }
+
+/* ---------- queues ---------- */
+function typeOk(c){
+  if (prefs.type === "all") return true;
+  if (prefs.type === "other") return c.ty === "d" || c.ty === "r";
+  return c.ty === prefs.type;
+}
+function pool(){ return CARDS.filter(function(c){ return prefs.levels.indexOf(c.lv) > -1 && typeOk(c); }); }
+function levelNames(){ return prefs.levels.slice().sort().map(function(l){ return LV[l]; }); }
+function levelLabel(cap){ return prefs.levels.length >= 6 ? (cap ? "All levels" : "all levels") : joinNames(levelNames()); }
+function joinNames(a){ return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
+function newStartedToday(now){
+  var start = dayStart(now), n = 0;
+  for (var id in prog.p) if (prog.p[id].f && prog.p[id].f >= start) n++;
+  return n;
+}
+function newLimitToday(now){
+  var extra = prefs.extra && prefs.extra.day === dayNum(now) ? prefs.extra.n : 0;
+  return prefs.newPerDay + extra;
+}
+function queueInfo(now){
+  var p = pool(), learnDue = [], learnLater = [], revDue = [], fresh = [], learned = 0, learning = 0;
+  p.forEach(function(c){
+    var s = state(c.id);
+    if (!s) { fresh.push(c); return; }
+    if (s.st === 2) { learned++; if (s.due <= now) revDue.push(c); }
+    else { learning++; if (s.due <= now) learnDue.push(c); else learnLater.push(c); }
+  });
+  var byDue = function(a, b){ return state(a.id).due - state(b.id).due; };
+  learnDue.sort(byDue); learnLater.sort(byDue); revDue.sort(byDue);
+  fresh.sort(function(a, b){ return a.so - b.so; });
+  var newLeft = Math.max(0, newLimitToday(now) - newStartedToday(now));
+  return {pool:p, learnDue:learnDue, learnLater:learnLater, revDue:revDue, fresh:fresh, newShown:Math.min(newLeft, fresh.length), newLeft:newLeft, learned:learned, learning:learning};
+}
+function pickNext(now, avoid){
+  var q = queueInfo(now);
+  var due = q.learnDue.concat(q.revDue).sort(function(a, b){ return state(a.id).due - state(b.id).due; });
+  var lists = [due, q.newShown ? q.fresh.slice(0, q.newShown) : []];
+  for (var i = 0; i < lists.length; i++) {
+    var l = lists[i].filter(function(c){ return c.id !== avoid; });
+    if (l.length) return l[0].id;
+  }
+  var ahead = q.learnLater.filter(function(c){ return state(c.id).due <= now + LEARN_AHEAD; });
+  var other = ahead.filter(function(c){ return c.id !== avoid; });
+  if (other.length) return other[0].id;
+  if (ahead.length) return ahead[0].id;
+  var leftovers = q.learnDue.concat(q.revDue);
+  return leftovers.length ? leftovers[0].id : null;
+}
+
+/* ---------- staircase ---------- */
+var stairs = $("#stairs");
+for (var l = 1; l <= 6; l++) {
+  var b = document.createElement("button");
+  b.type = "button"; b.className = "step"; b.dataset.lv = l; b.style.setProperty("--i", l - 1);
+  b.innerHTML = '<span class="fill"></span><span class="lv">' + LV[l] + '</span><span class="ct"></span>';
+  stairs.appendChild(b);
+}
+stairs.addEventListener("click", function(e){
+  var b = e.target.closest(".step"); if (!b || b.disabled) return;
+  var lv = +b.dataset.lv, i = prefs.levels.indexOf(lv);
+  if (i > -1) { if (prefs.levels.length > 1) prefs.levels.splice(i, 1); }
+  else prefs.levels.push(lv);
+  savePrefs(); onFilterChange();
+});
+$("#allBtn").addEventListener("click", function(){
+  prefs.levels = [1,2,3,4,5,6].filter(function(l){ return levelTotal(l) > 0; });
+  savePrefs(); onFilterChange();
+});
+function renderStairs(){
+  var steps = stairs.querySelectorAll(".step");
+  for (var k = 0; k < steps.length; k++) {
+    var b = steps[k], lv = +b.dataset.lv;
+    var cs = CARDS.filter(function(c){ return c.lv === lv; });
+    var total = levelTotal(lv), locked = isLocked(lv);
+    var learned = cs.filter(function(c){ var s = state(c.id); return s && s.st === 2; }).length;
+    var pct = total ? Math.round(learned / total * 100) : 0;
+    b.style.setProperty("--fill", pct + "%");
+    b.classList.toggle("locked", locked);
+    b.querySelector(".ct").textContent = locked ? "Members" : learned + "/" + total;
+    b.setAttribute("aria-pressed", prefs.levels.indexOf(lv) > -1 ? "true" : "false");
+    b.setAttribute("aria-label", LV[lv] + ": " + total + " words, " + (locked ? "members only" : learned + " learned"));
+    b.disabled = !total;
+  }
+  var q = queueInfo(Date.now());
+  var due = q.learnDue.length + q.revDue.length;
+  $("#levelSummary").textContent = levelLabel(true) + ": " + q.pool.length + " words. " + q.learned + " learned, " + due + " due, " + q.fresh.length + " new.";
+  renderLockBanner();
+}
+function renderLockBanner(){
+  var el = $("#lockBanner"), locked = lockedSelected();
+  var open = prefs.levels.filter(function(lv){ return !isLocked(lv); });
+  // Only locked levels chosen: the panel itself shows the members-only note instead.
+  if (!locked.length || !open.length) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = '<span>' + esc(joinNames(locked.map(function(l){ return LV[l]; }))) + ' ' + (locked.length === 1 ? "is" : "are") + ' for members (' + lockedWordCount(locked) + ' more words).</span>' +
+    '<button class="btn primary" data-act="subscribe" type="button">Subscribe</button>';
+}
+function membersOnlyHtml(){
+  var locked = lockedSelected();
+  return '<div class="panel-msg members"><h2>Members only</h2><p>' + esc(joinNames(locked.map(function(l){ return LV[l]; }))) + ' ' + (locked.length === 1 ? "has " : "have ") + lockedWordCount(locked) +
+    ' words for members. A1 and A2 are free for everyone with an account.</p>' +
+    '<div class="actions single"><button class="btn primary" data-act="subscribe" type="button">Subscribe' + (CFG.priceLabel ? " · " + esc(CFG.priceLabel) : "") + '</button></div></div>';
+}
+function onlyLockedChosen(){ var locked = lockedSelected(); return locked.length && locked.length === prefs.levels.length; }
+
+/* ---------- mode and filters ---------- */
+var tabs = document.querySelectorAll(".tab");
+for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener("click", function(){ setMode(this.dataset.mode); });
+function setMode(m){
+  prefs.mode = m; savePrefs();
+  for (var i = 0; i < tabs.length; i++) tabs[i].setAttribute("aria-selected", tabs[i].dataset.mode === m ? "true" : "false");
+  $("#panel-cards").hidden = m !== "cards";
+  $("#panel-quiz").hidden = m !== "quiz";
+  $("#panel-list").hidden = m !== "list";
+  $("#dirWrap").hidden = m === "list";
+  $("#newWrap").hidden = m !== "cards";
+  if (m === "cards") renderCard();
+  if (m === "quiz" && !qz.qs) renderQuizStart();
+  if (m === "list") renderList();
+}
+var typeSel = $("#typeSel"), dirSel = $("#dirSel"), newSel = $("#newSel");
+typeSel.value = prefs.type; dirSel.value = prefs.dir; newSel.value = String(prefs.newPerDay);
+typeSel.addEventListener("change", function(){ prefs.type = this.value; savePrefs(); onFilterChange(); });
+dirSel.addEventListener("change", function(){ prefs.dir = this.value; savePrefs(); if (prefs.mode === "cards") renderCard(); if (qz.qs && qz.i < qz.qs.length) renderQuestion(); });
+newSel.addEventListener("change", function(){ prefs.newPerDay = +this.value; savePrefs(); fc.cur = null; renderStairs(); renderCard(); });
+function onFilterChange(){
+  renderStairs();
+  fc.cur = null; fc.revealed = false;
+  qz.qs = null;
+  if (prefs.mode === "cards") renderCard();
+  if (prefs.mode === "quiz") renderQuizStart();
+  if (prefs.mode === "list") renderList();
+}
+
+/* ---------- speech ---------- */
+var arVoice = null;
+function pickVoice(){
+  if (!("speechSynthesis" in window)) return;
+  var v = window.speechSynthesis.getVoices();
+  arVoice = v.filter(function(x){ return /^ar/i.test(x.lang); })[0] || null;
+  document.body.classList.toggle("can-speak", !!arVoice);
+}
+pickVoice();
+if ("speechSynthesis" in window) window.speechSynthesis.onvoiceschanged = pickVoice;
+function speak(text){
+  if (!arVoice) return;
+  try {
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text.replace(/[×\/\-–_]/g, "، "));
+    u.voice = arVoice; u.lang = arVoice.lang; u.rate = 0.85;
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+/* ---------- formatting ---------- */
+function arSizeClass(s){ return s.length > 34 ? " xlong" : s.length > 18 ? " long" : ""; }
+function exHtml(c, cls){
+  if (!c.ex.length) return "";
+  return '<div class="' + (cls || "examples") + '">' + c.ex.map(function(e){
+    return '<div class="ex"><p class="ex-ar" lang="ar">' + esc(e[0]) + '</p><p class="ex-en">' + esc(e[1]) + '</p></div>';
+  }).join("") + '</div>';
+}
+function stageTag(id){
+  var s = state(id);
+  if (!s) return '<span class="st">New</span>';
+  if (s.st === 2) return '<span class="st s2">Review</span>';
+  if (s.st === 3) return '<span class="st s3">Relearning</span>';
+  return '<span class="st s1">Learning</span>';
+}
+function ivlLabel(next, now){
+  if (next.st !== 2) { var m = Math.max(1, Math.round((next.due - now) / MINUTE)); return m < 60 ? m + "m" : Math.round(m / 60) + "h"; }
+  var d = dayNum(next.due) - dayNum(now);
+  if (d < 30) return d + "d";
+  if (d < 365) return (Math.round(d / 30 * 10) / 10).toString() + "mo";
+  return (Math.round(d / 365 * 10) / 10).toString() + "y";
+}
+function whenLabel(ms, now){
+  var d = dayNum(ms) - dayNum(now);
+  if (ms <= now) return "now";
+  if (d <= 0) return "at " + new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+  if (d === 1) return "tomorrow";
+  if (d < 30) return "in " + d + " days";
+  return "on " + new Date(ms).toLocaleDateString([], {day:"numeric", month:"short", year: d > 300 ? "numeric" : undefined});
+}
+function memDays(st){ var v = st < 10 ? Math.round(st * 10) / 10 : Math.round(st); return v + (v === 1 ? " day" : " days"); }
+function memoryLine(id, now){
+  var s = state(id);
+  if (!s) return "Not studied yet.";
+  var r = Math.round(sched.retrievability(s, now) * 100);
+  var parts = [];
+  parts.push(s.st === 2 ? (s.due <= now ? "Due for review now." : "Next review " + whenLabel(s.due, now) + ".") : (s.due <= now ? "Still in its learning steps and due now." : "Still in its learning steps; comes back " + whenLabel(s.due, now) + "."));
+  parts.push("Memory lasts about " + memDays(s.s) + " before recall drops to 90%.");
+  if (s.st === 2) parts.push("Chance you'd remember it right now: " + r + "%.");
+  parts.push("Reviewed " + s.r + " time" + (s.r === 1 ? "" : "s") + (s.l ? ", forgotten " + s.l + " time" + (s.l === 1 ? "" : "s") : "") + ".");
+  return parts.join(" ");
+}
+function dateLabel(iso){ return new Date(iso).toLocaleDateString([], {day:"numeric", month:"long", year:"numeric"}); }
+
+/* ---------- importing progress from the single-user app ---------- */
+var importState = null; // null, or {local:{p,t,n}, sheetUrl, msg, busy}
+function legacyLocal(){
+  var saved = lsGet(LEGACY_PROG_KEY);
+  if (!saved || !saved.p) return null;
+  var p = migrateMap(saved.p), n = Object.keys(p).length;
+  // Words from levels this account can't open yet can't be saved to it.
+  var locked = Object.keys(saved.p).filter(function(id){ return !byId.has(id) && saved.p[id]; }).length;
+  return n ? {p:p, t:saved.t || 0, n:n, locked:locked} : null;
+}
+function wordsLabel(n){ return n + (n === 1 ? " word" : " words"); }
+function maybeOfferImport(){
+  if (!user || importState || lsGet(ukey("import-done"))) return;
+  if (serverProgressCount !== 0 || !outboxEmpty() || Object.keys(prog.p).length) return;
+  var local = legacyLocal(), url = lsGet(LEGACY_SYNC_KEY) || "";
+  if (!local && !url) return;
+  importState = {local:local, sheetUrl:url, msg:"", busy:false};
+  if (prefs.mode === "cards") renderCard();
+}
+function openImport(){
+  importState = {local:legacyLocal(), sheetUrl:lsGet(LEGACY_SYNC_KEY) || "", msg:"", busy:false, manual:true};
+  setMode("cards");
+  window.scrollTo({top:$("#panel-cards").offsetTop - 20, behavior:"smooth"});
+}
+function importHtml(){
+  var s = importState, local = s.local;
+  var html = '<div class="panel-msg import"><h2>Bring your progress with you</h2>';
+  html += '<p>Your account starts empty. If you used the earlier version of this app, you can copy what you studied there into your account. This replaces anything already in your account.</p>';
+  html += '<div class="import-opts">';
+  if (local) html += '<button class="btn primary" data-act="import-local" type="button"' + (s.busy ? " disabled" : "") + '>Import ' + wordsLabel(local.n) + ' from this device</button>' +
+    (local.locked ? '<p class="msg">' + wordsLabel(local.locked) + ' from members-only levels will be left out. Subscribe first if you want to bring those too.</p>' : "");
+  html += '<div class="import-sheet"><label for="importUrl">Or import from your Google Sheet (App Progress tab). Paste your sync link:</label>' +
+    '<input id="importUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/.../exec" value="' + esc(s.sheetUrl || "") + '">' +
+    '<button class="btn" data-act="import-sheet" type="button"' + (s.busy ? " disabled" : "") + '>Import from Google Sheet</button></div>';
+  html += '</div>';
+  if (s.msg) html += '<p class="msg" aria-live="polite">' + esc(s.msg) + '</p>';
+  html += '<p><button class="link" data-act="import-skip" type="button">' + (s.manual ? "Cancel" : "Start fresh instead") + '</button></p></div>';
+  return html;
+}
+// Same format the Google Sheet script returns: {header, rows} with the FSRS state as JSON in the Data column.
+function parseSheet(d){
+  var h = (d.header || []).map(String), rows = d.rows || [];
+  var iCard = h.indexOf("Card"), iData = h.indexOf("Data"), iStatus = h.indexOf("Status");
+  var p = {};
+  if (iCard > -1 && iData > -1) {
+    rows.forEach(function(r){
+      var id = String(r[iCard]).trim();
+      if (!byId.has(id)) return;
+      try { var s = JSON.parse(r[iData]); if (validState(s)) p[id] = s; } catch (e) {}
+    });
+  } else if (iCard > -1 && iStatus > -1) {
+    var old = {};
+    rows.forEach(function(r){ var st = String(r[iStatus]).trim(); old[String(r[iCard]).trim()] = st === "Known" ? 2 : st === "Still learning" ? 1 : 0; });
+    p = migrateMap(old);
+  } else if (d.progress) p = migrateMap(d.progress);
+  return p;
+}
+function applyImport(p, from){
+  var n = Object.keys(p).length;
+  if (!n) { importState.msg = "There was no progress to import " + from + "."; importState.busy = false; renderCard(); return; }
+  prog.p = p;
+  outbox.wipe = Date.now(); outbox.up = {}; outbox.del = {};
+  Object.keys(p).forEach(function(id){ outbox.up[id] = p[id]; });
+  lsSet(ukey("import-done"), true);
+  importState = null;
+  fc.cur = null; fc.undo = null;
+  saveProgress([]);
+  flush();
+  renderAll();
+  toast("Imported " + wordsLabel(n) + " " + from + ".");
+}
+$("#panel-cards").addEventListener("click", function(e){
+  var a = e.target.closest("[data-act]"); if (!a || !importState) return;
+  var act = a.dataset.act;
+  if (act === "import-local") { var loc = legacyLocal(); applyImport(loc ? loc.p : {}, "from this device"); }
+  else if (act === "import-skip") { if (!importState.manual) lsSet(ukey("import-done"), true); importState = null; renderCard(); }
+  else if (act === "import-sheet") {
+    var u = ($("#importUrl").value || "").trim().split("?")[0].split("#")[0];
+    importState.sheetUrl = u;
+    if (!/^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[\w-]+\/exec$/.test(u)) { importState.msg = "That doesn't look like a sync link. It starts with https://script.google.com/macros/s/ and ends with /exec."; renderCard(); return; }
+    importState.busy = true; importState.msg = "Reading your Google Sheet…"; renderCard();
+    fetch(u, {method:"GET", cache:"no-store"}).then(function(r){ return r.json(); }).then(function(d){
+      if (!d || !d.ok) throw new Error("bad response");
+      applyImport(parseSheet(d), "from your Google Sheet");
+    }).catch(function(){
+      if (!importState) return;
+      importState.busy = false; importState.msg = "Couldn't read your Google Sheet with that link. Check you're online and the link is the Web app URL from Apps Script.";
+      renderCard();
+    });
+  }
+}, true);
+
+/* ---------- flashcards ---------- */
+var fc = {cur:null, revealed:false, last:null, lastAt:0, undo:null, timer:null};
+function renderCard(){
+  var el = $("#panel-cards"), now = Date.now();
+  clearTimeout(fc.timer);
+  if (importState) { el.innerHTML = importHtml(); return; }
+  if (fc.cur && !byId.has(fc.cur)) fc.cur = null;
+  if (!fc.cur) { fc.cur = pickNext(now, now - fc.lastAt < 10 * MINUTE ? fc.last : null); fc.revealed = false; }
+  var q = queueInfo(now);
+  var countsHtml = '<span class="counts"><span class="cn"><b>' + q.newShown + '</b> new</span><span class="cl"><b>' + (q.learnDue.length + q.learnLater.length) + '</b> learning</span><span class="cr"><b>' + q.revDue.length + '</b> to review</span></span>';
+  var undoHtml = fc.undo ? '<button class="link" data-act="undo" type="button">Undo</button>' : "";
+  if (!fc.cur) {
+    var html = '<div class="meta">' + countsHtml + '<span class="meta-right">' + undoHtml + '</span></div>';
+    if (onlyLockedChosen()) { el.innerHTML = html + membersOnlyHtml(); return; }
+    if (!q.pool.length) {
+      el.innerHTML = html + '<div class="panel-msg"><h2>No words match</h2><p>Try another word type or add a level above.</p></div>';
+      return;
+    }
+    var lines = [];
+    var nextLearn = q.learnLater[0];
+    if (nextLearn) lines.push("A word you're learning comes back " + whenLabel(state(nextLearn.id).due, now) + ". Leave the app open or come back then.");
+    var futureRev = q.pool.filter(function(c){ var s = state(c.id); return s && s.st === 2 && s.due > now; })
+      .sort(function(a, b){ return state(a.id).due - state(b.id).due; });
+    if (futureRev.length) {
+      var firstDay = dayNum(state(futureRev[0].id).due);
+      var sameDay = futureRev.filter(function(c){ return dayNum(state(c.id).due) === firstDay; }).length;
+      lines.push("Next reviews: " + sameDay + " word" + (sameDay === 1 ? "" : "s") + " " + whenLabel(state(futureRev[0].id).due, now) + ".");
+    }
+    var moreBtn = "";
+    if (q.fresh.length && q.newLeft === 0) {
+      lines.push("You've started " + newStartedToday(now) + " new words today, which is your daily limit. More arrive tomorrow.");
+      moreBtn = '<button class="btn" data-act="more-new" type="button">Learn ' + Math.min(10, q.fresh.length) + ' more new words today</button>';
+    } else if (!q.fresh.length) {
+      lines.push(lockedSelected().length ? "You've started every free word you've chosen. Members can keep going with " + joinNames(lockedSelected().map(function(l){ return LV[l]; })) + "." : "You've started every word in " + levelLabel() + ". Add another level above to keep going.");
+    }
+    el.innerHTML = html + '<div class="panel-msg"><h2>All caught up</h2><p>Nothing else is due in ' + levelLabel() + ' right now.</p>' +
+      '<div class="done-list">' + lines.map(function(x){ return '<p>' + esc(x) + '</p>'; }).join("") + '</div>' +
+      '<div class="actions' + (moreBtn ? "" : " single") + '">' + moreBtn + '<button class="btn primary" data-act="to-quiz" type="button">Quiz yourself instead</button></div></div>';
+    if (nextLearn) {
+      var wait = state(nextLearn.id).due - LEARN_AHEAD - now;
+      if (wait < 6 * 3600000) fc.timer = setTimeout(function(){ if (prefs.mode === "cards") renderCard(); }, Math.max(wait, 1000) + 500);
+    }
+    return;
+  }
+  var c = byId.get(fc.cur), s = state(c.id), arFirst = prefs.dir === "ar";
+  var html2 = '<div class="meta">' + countsHtml + '<span class="meta-right">' + undoHtml + '</span></div>';
+  html2 += '<div class="card" id="card" tabindex="0" role="button" aria-label="' + (fc.revealed ? "Card" : "Show answer") + '">';
+  html2 += '<div class="card-top"><span class="pill">' + LV[c.lv] + '</span><span class="tytag">' + TY[c.ty] + '</span>' + stageTag(c.id) + '<button class="listen" data-act="speak" type="button" aria-label="Listen to the Arabic">Listen</button></div>';
+  html2 += arFirst
+    ? '<div class="prompt is-ar' + arSizeClass(c.ar) + '" lang="ar">' + esc(c.ar) + '</div>'
+    : '<div class="prompt is-en">' + esc(c.en) + '</div>';
+  if (fc.revealed) {
+    html2 += '<div class="answer" aria-live="polite">' + (arFirst
+      ? '<div class="answer-main is-en">' + esc(c.en) + '</div>'
+      : '<div class="answer-main is-ar" lang="ar">' + esc(c.ar) + '</div>') + exHtml(c) +
+      (s ? '<p class="mem">Memory currently lasts about ' + memDays(s.s) + ' before recall drops to 90%.</p>' : '<p class="mem">First time seeing this word.</p>') + '</div>';
+  } else {
+    html2 += '<div class="tap">Try to recall it, then tap to check</div>';
+  }
+  html2 += '</div>';
+  if (fc.revealed) {
+    var choices = [{g:1, key:"1", label:"I don't remember", cls:"again"}, {g:3, key:"2", label:"I remember", cls:"good"}];
+    html2 += '<div class="grade two" role="group" aria-label="Did you remember it?">';
+    choices.forEach(function(ch){
+      var nx = sched.review(s, ch.g, now, true);
+      html2 += '<button class="gbtn ' + ch.cls + '" data-grade="' + ch.g + '" type="button">' + ch.label + '<small>next in ' + ivlLabel(nx, now) + '</small><kbd>' + ch.key + '</kbd></button>';
+    });
+    html2 += '</div><p class="hint">Press 1 if you didn\'t remember it, 2 or Space if you did.</p>';
+  } else {
+    html2 += '<div class="actions single"><button class="btn primary" data-act="reveal" type="button">Show answer<kbd>Space</kbd></button></div>';
+    html2 += '<p class="hint">Space shows the answer.</p>';
+  }
+  el.innerHTML = html2;
+}
+function reveal(){ if (!fc.cur || fc.revealed) return; fc.revealed = true; renderCard(); }
+function rate(g){
+  if (!fc.cur || !fc.revealed) return;
+  var id = fc.cur, now = Date.now();
+  fc.undo = {id:id, prev:state(id), extra:prefs.extra ? Object.assign({}, prefs.extra) : null, logs:outbox.logs.length};
+  prog.p[id] = sched.review(state(id), g, now);
+  queueLog(id, g, now);
+  fc.last = id; fc.lastAt = now; fc.cur = null; fc.revealed = false;
+  saveProgress([id]);
+  renderCard();
+}
+function undo(){
+  if (!fc.undo) return;
+  var u = fc.undo;
+  if (u.prev) prog.p[u.id] = u.prev; else delete prog.p[u.id];
+  // Drop the answer from the log too, if it hasn't been sent yet.
+  if (outbox.logs.length === u.logs + 1 && outbox.logs[u.logs].card_id === u.id) outbox.logs.pop();
+  fc.undo = null; fc.cur = u.id; fc.revealed = true; fc.last = null;
+  saveProgress([u.id]);
+  renderCard();
+}
+$("#panel-cards").addEventListener("click", function(e){
+  if (importState) return;
+  var gb = e.target.closest("[data-grade]");
+  if (gb) return rate(+gb.dataset.grade);
+  var a = e.target.closest("[data-act]");
+  if (a) {
+    var act = a.dataset.act;
+    if (act === "speak") { e.stopPropagation(); var c = byId.get(fc.cur); if (c) speak(c.ar); return; }
+    if (act === "reveal") return reveal();
+    if (act === "undo") return undo();
+    if (act === "to-quiz") return setMode("quiz");
+    if (act === "more-new") {
+      var day = dayNum(Date.now());
+      prefs.extra = {day:day, n:(prefs.extra && prefs.extra.day === day ? prefs.extra.n : 0) + 10};
+      savePrefs(); fc.cur = null; renderStairs(); return renderCard();
+    }
+    if (act === "subscribe") return;
+  }
+  if (e.target.closest("#card")) reveal();
+});
+
+/* ---------- quiz ---------- */
+var qz = {qs:null, i:0, score:0, misses:[], answered:false, picked:null};
+function senseKey(en){ return en.split(/[,(\/;×]/)[0].trim().toLowerCase().replace(/^to /, ""); }
+function makeOptions(c, p){
+  var src = p.length >= 8 ? p : CARDS;
+  var same = shuffle(src.filter(function(x){ return x.ty === c.ty && x.id !== c.id; }));
+  var other = shuffle(src.filter(function(x){ return x.ty !== c.ty && x.id !== c.id; }));
+  var keys = {}, ars = {}; keys[senseKey(c.en)] = 1; ars[norm(c.ar)] = 1;
+  var opts = [c], cand = same.concat(other);
+  for (var i = 0; i < cand.length && opts.length < 4; i++) {
+    var x = cand[i], k = senseKey(x.en), a = norm(x.ar);
+    if (keys[k] || ars[a]) continue;
+    keys[k] = 1; ars[a] = 1; opts.push(x);
+  }
+  return shuffle(opts).map(function(x){ return x.id; });
+}
+function renderQuizStart(){
+  var p = pool(), el = $("#panel-quiz");
+  if (onlyLockedChosen()) { el.innerHTML = membersOnlyHtml(); return; }
+  if (p.length < 2) {
+    el.innerHTML = '<div class="panel-msg"><h2>Not enough words for a quiz</h2><p>Add another level or switch the word type back to All types.</p></div>';
+    return;
+  }
+  var lens = [10, 20, 40].filter(function(n){ return n < p.length; });
+  if (p.length <= 60) lens.push(p.length);
+  if (lens.indexOf(prefs.qlen) < 0) prefs.qlen = lens[0];
+  el.innerHTML = '<div class="panel-msg"><h2>Quiz on ' + levelLabel() + '</h2><p>' + p.length + ' words to draw from. Words you miss are marked Again, so they come straight back in your flashcards. Right answers leave your review schedule as it is.</p>' +
+    '<div class="lengths" role="group" aria-label="Number of questions">' + lens.map(function(n){
+      return '<button type="button" data-len="' + n + '" aria-pressed="' + (n === prefs.qlen) + '">' + (n === p.length && n > 40 ? "All " + n : n + " questions") + '</button>';
+    }).join("") + '</div>' +
+    '<div class="actions single"><button class="btn primary" data-act="start" type="button">Start quiz</button></div></div>';
+}
+function startQuiz(ids){
+  var p = pool();
+  var picks = ids ? ids.map(function(id){ return byId.get(id); }) : shuffle(p.slice()).slice(0, Math.min(prefs.qlen, p.length));
+  qz.qs = picks.map(function(c){ return {id:c.id, opts:makeOptions(c, p)}; });
+  qz.i = 0; qz.score = 0; qz.misses = []; qz.answered = false; qz.picked = null;
+  renderQuestion();
+}
+function renderQuestion(){
+  var el = $("#panel-quiz");
+  if (qz.i >= qz.qs.length) return renderResults();
+  var q = qz.qs[qz.i], c = byId.get(q.id), arFirst = prefs.dir === "ar";
+  if (!c) { qz.qs = null; return renderQuizStart(); }
+  var html = '<div class="meta"><span>Question ' + (qz.i + 1) + ' of ' + qz.qs.length + '</span><span>' + qz.score + ' correct</span></div>';
+  html += '<div class="qprompt"><div class="card-top"><span class="pill">' + LV[c.lv] + '</span><span class="tytag">' + TY[c.ty] + '</span><button class="listen" data-act="speak" type="button" aria-label="Listen to the Arabic" style="margin-left:auto">Listen</button></div>';
+  html += arFirst ? '<div class="prompt is-ar' + arSizeClass(c.ar) + '" lang="ar">' + esc(c.ar) + '</div>' : '<div class="prompt is-en">' + esc(c.en) + '</div>';
+  html += '</div><div class="opts" role="group" aria-label="Answers">';
+  q.opts.forEach(function(id, k){
+    var o = byId.get(id), cls = "opt";
+    if (!o) return;
+    if (qz.answered) { if (id === q.id) cls += " correct"; else if (id === qz.picked) cls += " wrong"; }
+    html += '<button class="' + cls + '" data-opt="' + id + '" type="button"' + (qz.answered ? " disabled" : "") + '><span class="k">' + (k + 1) + '</span>' +
+      (arFirst ? '<span class="t">' + esc(o.en) + '</span>' : '<span class="t ar" lang="ar">' + esc(o.ar) + '</span>') + '</button>';
+  });
+  html += '</div>';
+  if (qz.answered) {
+    var right = qz.picked === q.id;
+    html += '<div class="feedback" aria-live="polite"><strong>' + (right ? "Correct." : "Not quite.") + '</strong> <span lang="ar" class="ar">' + esc(c.ar) + '</span> means ' + esc(c.en) + '.' +
+      (c.ex.length ? '<p class="ex-ar" lang="ar">' + esc(c.ex[0][0]) + '</p><p class="ex-en">' + esc(c.ex[0][1]) + '</p>' : "") + '</div>';
+    html += '<div class="actions single"><button class="btn primary" data-act="next" type="button">' + (qz.i + 1 < qz.qs.length ? "Next question" : "See results") + '<kbd>Enter</kbd></button></div>';
+  }
+  el.innerHTML = html;
+}
+function answer(id){
+  if (qz.answered) return;
+  var q = qz.qs[qz.i];
+  qz.answered = true; qz.picked = id;
+  if (id === q.id) qz.score++;
+  else {
+    var now = Date.now();
+    qz.misses.push(q.id);
+    prog.p[q.id] = sched.review(state(q.id), 1, now);
+    queueLog(q.id, 1, now);
+    fc.cur = null; fc.undo = null;
+    saveProgress([q.id]);
+  }
+  renderQuestion();
+}
+function renderResults(){
+  var el = $("#panel-quiz"), n = qz.qs.length;
+  var html = '<div class="panel-msg"><p>Your score</p><div class="big-score">' + qz.score + ' / ' + n + '</div>';
+  if (qz.misses.length) {
+    html += '<p>These are now back in your flashcards:</p><div class="misses">' + qz.misses.map(function(id){
+      var c = byId.get(id);
+      return c ? '<div class="miss"><span>' + esc(c.en) + '</span><span class="ar" lang="ar">' + esc(c.ar) + '</span></div>' : "";
+    }).join("") + '</div>';
+    html += '<div class="actions"><button class="btn primary" data-act="study-misses" type="button">Practise them in flashcards</button><button class="btn" data-act="new" type="button">New quiz</button></div>';
+  } else {
+    html += '<p>No misses this time.</p><div class="actions single"><button class="btn primary" data-act="new" type="button">New quiz</button></div>';
+  }
+  el.innerHTML = html + '</div>';
+}
+$("#panel-quiz").addEventListener("click", function(e){
+  var len = e.target.closest("[data-len]");
+  if (len) { prefs.qlen = +len.dataset.len; savePrefs(); return renderQuizStart(); }
+  var o = e.target.closest("[data-opt]");
+  if (o) return answer(o.dataset.opt);
+  var a = e.target.closest("[data-act]"); if (!a) return;
+  var act = a.dataset.act;
+  if (act === "start") return startQuiz();
+  if (act === "speak") { var c = byId.get(qz.qs[qz.i].id); return speak(c.ar); }
+  if (act === "next") { qz.i++; qz.answered = false; qz.picked = null; return renderQuestion(); }
+  if (act === "study-misses") { fc.cur = null; return setMode("cards"); }
+  if (act === "new") { qz.qs = null; return renderQuizStart(); }
+});
+
+/* ---------- word list ---------- */
+var openRows = {};
+function renderList(){
+  var q = norm($("#search").value.trim()), now = Date.now();
+  var cards = pool().filter(function(c){ return !q || norm(c.ar).indexOf(q) > -1 || c.en.toLowerCase().indexOf(q) > -1; });
+  var el = $("#list");
+  var lockedLv = lockedSelected();
+  if (!cards.length && !lockedLv.length) { el.innerHTML = '<div class="panel-msg"><h2>No matches</h2><p>' + (q ? "Nothing in " + levelLabel() + " matches that search. Try fewer letters or add a level." : "Try another word type or add a level above.") + '</p></div>'; return; }
+  var html = "";
+  [1,2,3,4,5,6].forEach(function(lv){
+    var group = cards.filter(function(c){ return c.lv === lv; });
+    if (lockedLv.indexOf(lv) > -1 && !group.length) {
+      html += '<h3 class="lvhead">' + LV[lv] + ' <span>' + levelTotal(lv) + ' words</span></h3>' +
+        '<div class="row locked-row"><p>Members only. <button class="link" data-act="subscribe" type="button">Subscribe</button> to study these words.</p></div>';
+      return;
+    }
+    if (!group.length) return;
+    group.sort(function(a, b){ return a.en.localeCompare(b.en); });
+    html += '<h3 class="lvhead">' + LV[lv] + ' <span>' + group.length + ' word' + (group.length === 1 ? "" : "s") + '</span></h3>';
+    group.forEach(function(c){
+      var s = state(c.id), cls = !s ? 0 : s.st === 2 ? 2 : s.st === 3 ? 3 : 1;
+      var sub = !s ? "new" : s.st === 2 ? (s.due <= now ? "due now" : "next review " + whenLabel(s.due, now)) : "learning";
+      var label = !s ? "New" : s.st === 2 ? "Learned" : "Learning";
+      html += '<div class="row" data-id="' + c.id + '"><div class="row-main">' +
+        '<span class="dot s' + cls + '" role="img" aria-label="' + label + '"></span>' +
+        '<button class="row-en" data-act="open" type="button" aria-expanded="' + (!!openRows[c.id]) + '">' + esc(c.en) + '<small>' + TY[c.ty] + ', ' + sub + '</small></button>' +
+        '<div class="row-ar" lang="ar">' + esc(c.ar) + '</div></div>';
+      if (openRows[c.id]) {
+        html += '<div class="row-ex">' + (c.ex.length ? exHtml(c, "") : '<p class="ex-en">No example sentence for this one yet.</p>') +
+          '<p class="mem">' + esc(memoryLine(c.id, now)) + '</p>' +
+          (s ? '<button class="btn" data-act="forget" type="button">Reset this word to new</button>' : "") + '</div>';
+      }
+      html += '</div>';
+    });
+  });
+  el.innerHTML = html;
+}
+var searchTimer = null;
+$("#search").addEventListener("input", function(){ clearTimeout(searchTimer); searchTimer = setTimeout(renderList, 120); });
+$("#list").addEventListener("click", function(e){
+  var a = e.target.closest("[data-act]"); if (!a) return;
+  if (a.dataset.act === "subscribe") return;
+  var id = a.closest(".row").dataset.id;
+  if (a.dataset.act === "open") openRows[id] = !openRows[id];
+  else if (a.dataset.act === "forget") { delete prog.p[id]; fc.cur = null; fc.undo = null; saveProgress([id]); }
+  renderList();
+});
+
+/* ---------- keyboard ---------- */
+document.addEventListener("keydown", function(e){
+  if (!user) return;
+  var tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "select" || tag === "textarea" || e.metaKey || e.ctrlKey || e.altKey) return;
+  var onButton = tag === "button";
+  var go = e.key === " " || e.key === "Enter";
+  if (prefs.mode === "cards" && fc.cur && !importState) {
+    if (!fc.revealed && go && !onButton) { e.preventDefault(); reveal(); }
+    else if (fc.revealed && e.key === "1") { e.preventDefault(); rate(1); }
+    else if (fc.revealed && (e.key === "2" || (go && !onButton))) { e.preventDefault(); rate(3); }
+  } else if (prefs.mode === "quiz" && qz.qs && qz.i < qz.qs.length) {
+    var q = qz.qs[qz.i];
+    if (!qz.answered && /^[1-4]$/.test(e.key) && q.opts[+e.key - 1]) { e.preventDefault(); answer(q.opts[+e.key - 1]); }
+    else if (qz.answered && e.key === "Enter" && !onButton) { e.preventDefault(); qz.i++; qz.answered = false; qz.picked = null; renderQuestion(); }
+  }
+});
+
+/* ---------- reset ---------- */
+var resetArmed = null;
+$("#resetBtn").addEventListener("click", function(){
+  var b = this;
+  if (!resetArmed) {
+    b.textContent = "Tap again to clear all progress";
+    resetArmed = setTimeout(function(){ resetArmed = null; b.textContent = "Reset all my progress"; }, 4000);
+    return;
+  }
+  clearTimeout(resetArmed); resetArmed = null; b.textContent = "Reset all my progress";
+  prog.p = {}; outbox.wipe = Date.now(); outbox.up = {}; outbox.del = {};
+  fc.cur = null; fc.undo = null; saveProgress([]); renderAll();
+});
+
+/* ---------- subscribe and manage subscription ---------- */
+function invoke(name, body){
+  return sb.functions.invoke(name, {body:body}).then(function(r){
+    if (r.error) throw r.error;
+    if (!r.data || !r.data.url) throw new Error((r.data && r.data.error) || "no url");
+    return r.data.url;
+  });
+}
+function appUrl(extra){ return location.origin + location.pathname + (extra || ""); }
+function subscribe(btn){
+  if (!CFG.paymentsEnabled) { toast("Subscriptions are opening soon."); return; }
+  if (!navigator.onLine) { toast("You're offline. Connect to the internet to subscribe."); return; }
+  if (btn) btn.disabled = true;
+  toast("Opening checkout…");
+  invoke("create-checkout", {success_url:appUrl("?checkout=success"), return_url:appUrl()}).then(function(url){
+    location.href = url;
+  }).catch(function(err){
+    console.warn(err);
+    toast("Couldn't open checkout. Please try again in a minute.");
+    if (btn) btn.disabled = false;
+  });
+}
+function manage(btn){
+  if (!navigator.onLine) { toast("You're offline. Connect to the internet to manage your subscription."); return; }
+  if (btn) btn.disabled = true;
+  invoke("customer-portal", {return_url:appUrl()}).then(function(url){ location.href = url; }).catch(function(err){
+    console.warn(err);
+    toast("Couldn't open your subscription page. Please try again in a minute.");
+    if (btn) btn.disabled = false;
+  });
+}
+document.addEventListener("click", function(e){
+  var a = e.target.closest("[data-act]"); if (!a) return;
+  if (a.dataset.act === "subscribe") { e.preventDefault(); subscribe(a); }
+  else if (a.dataset.act === "manage") { e.preventDefault(); manage(a); }
+  else if (a.dataset.act === "import-open") { e.preventDefault(); openImport(); }
+});
+// Back from a successful checkout: the payment webhook usually lands within seconds.
+function waitForMembership(){
+  var tries = 0;
+  toast("Payment received. Unlocking your levels…", 20000);
+  (function poll(){
+    tries++;
+    check(sb.from("memberships").select("*").eq("user_id", user.id).maybeSingle()).then(function(r){
+      member = r.data || member;
+      if (hasAccess()) { toast("Welcome! Every level is unlocked."); return refresh(); }
+      if (tries < 20) setTimeout(poll, 2000);
+      else toast("Your payment went through, but unlocking is taking longer than usual. Reload the page in a minute.", 15000);
+    }).catch(function(){ if (tries < 20) setTimeout(poll, 3000); });
+  })();
+}
+
+/* ---------- account box ---------- */
+function memberLine(){
+  var m = member;
+  if (profile && profile.role === "admin") return "Admin: you can see every level.";
+  if (!m || !hasAccess()) {
+    if (m && (m.status === "canceled" || m.status === "past_due")) return "Your membership has ended. A1 and A2 are still free.";
+    return "Free account: A1 and A2 are open. Subscribe to unlock B1 to C2.";
+  }
+  var end = m.current_period_end;
+  if (m.status === "comp") return end ? "Gifted membership until " + dateLabel(end) + "." : "Gifted lifetime membership.";
+  if (m.status === "canceled" || m.cancel_at_period_end) return "Member until " + dateLabel(end) + ". Your subscription won't renew.";
+  if (m.status === "past_due") return "Member. Your last payment didn't go through; please update your card before " + dateLabel(end) + ".";
+  return "Member" + (end ? ", renews on " + dateLabel(end) : "") + ".";
+}
+function renderAccount(){
+  if (!user) return;
+  $("#acctEmail").textContent = user.email || "";
+  $("#acctPlan").textContent = memberLine();
+  var paid = member && member.provider && (member.status === "active" || member.status === "past_due" || member.status === "canceled");
+  var isAdmin = profile && profile.role === "admin";
+  var btns = "";
+  if (!hasAccess()) btns += '<button class="btn primary" data-act="subscribe" type="button">Subscribe' + (CFG.priceLabel ? " · " + esc(CFG.priceLabel) : "") + '</button>';
+  if (paid) btns += '<button class="btn" data-act="manage" type="button">Manage or cancel subscription</button>';
+  if (isAdmin) btns += '<a class="btn" href="admin">Admin</a>';
+  $("#acctBtns").innerHTML = btns;
+  setSaveStatus();
+}
+function setSaveStatus(st){
+  var el = $("#saveStatus"); if (!el || !user) return;
+  var msg, cls = "";
+  if (st === "auth") { msg = "You've been signed out on this device. Sign in again to keep saving; your answers are kept here until then."; cls = "bad"; }
+  else if (!navigator.onLine) msg = outboxEmpty() ? "You're offline. Answers will be saved here and sent to your account when you're back online." : "You're offline. Your latest answers are saved on this device and will sync when you're back online.";
+  else if (st === "saving" || flushing) msg = "Saving…";
+  else if (saveError) { msg = "Couldn't reach the server. Your answers are safe on this device and will be sent again automatically."; cls = "bad"; }
+  else if (!outboxEmpty()) msg = "Saving shortly…";
+  else { msg = "All progress saved to your account" + (lastSaved ? " at " + new Date(lastSaved).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "") + "."; cls = "on"; }
+  el.textContent = msg; el.className = cls;
+}
+$("#signOutBtn").addEventListener("click", function(){
+  var b = this;
+  if (!outboxEmpty() && !navigator.onLine && !b.dataset.armed) {
+    b.dataset.armed = "1"; b.textContent = "Some answers aren't synced yet. Tap again to sign out anyway";
+    setTimeout(function(){ delete b.dataset.armed; b.textContent = "Sign out"; }, 5000);
+    return;
+  }
+  flush().then(function(){
+    var uid = user && user.id;
+    return sb.auth.signOut({scope:"local"}).catch(function(){}).then(function(){ if (uid) clearUserCache(uid); });
+  });
+});
+function clearUserCache(uid){
+  var pre = "arvocab-u:" + uid + ":", keys = [];
+  try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf(pre) === 0 && !/:outbox$|:import-done$/.test(k)) keys.push(k); } } catch (e) {}
+  keys.forEach(lsDel);
+}
+
+/* ---------- small messages ---------- */
+var toastTimer = null;
+function toast(msg, ms){
+  var el = $("#toast");
+  el.textContent = msg; el.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(function(){ el.hidden = true; }, ms || 5000);
+}
+function showLoadError(){
+  $("#panel-cards").innerHTML = '<div class="panel-msg"><h2>Couldn\'t load your words</h2><p>Check your internet connection, then reload the page. Once loaded, the app also works offline.</p></div>';
+}
+
+/* ---------- sign in ---------- */
+var signin = {email:"", sent:false, busy:false, msg:"", bad:false};
+function showSignedOut(){
+  user = null; profile = null; member = null; CARDS = []; byId = new Map(); prog.p = {}; importState = null;
+  $("#appMain").hidden = true; $("#signin").hidden = false; $(".top p").hidden = true;
+  renderSignin();
+}
+function renderSignin(){
+  var el = $("#signinBody");
+  if (!configured) {
+    el.innerHTML = '<p class="bad">This copy of the app isn\'t connected to its database yet. Fill in config.js (see SETUP.md).</p>';
+    return;
+  }
+  var html = "";
+  if (!signin.sent) {
+    html += '<form id="emailForm" novalidate><label for="email">Your email</label>' +
+      '<input id="email" type="email" autocomplete="email" inputmode="email" required value="' + esc(signin.email) + '" placeholder="you@example.com">' +
+      '<button class="btn primary" type="submit"' + (signin.busy ? " disabled" : "") + '>Email me a sign-in link</button></form>' +
+      '<div class="or"><span>or</span></div>' +
+      '<button class="btn google" id="googleBtn" type="button"' + (signin.busy ? " disabled" : "") + '>Continue with Google</button>';
+  } else {
+    html += '<p>We sent a sign-in link to <strong>' + esc(signin.email) + '</strong>. Open it on this device.</p>' +
+      '<form id="codeForm" novalidate><label for="code">If you installed the app, it\'s easier to type the 6-digit code from the same email:</label>' +
+      '<input id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="10" placeholder="123456">' +
+      '<button class="btn primary" type="submit"' + (signin.busy ? " disabled" : "") + '>Sign in with code</button></form>' +
+      '<p><button class="link" id="restartSignin" type="button">Use a different email</button></p>';
+  }
+  if (signin.msg) html += '<p class="msg' + (signin.bad ? " bad" : "") + '" aria-live="polite">' + esc(signin.msg) + '</p>';
+  el.innerHTML = html;
+}
+$("#signinBody").addEventListener("submit", function(e){
+  e.preventDefault();
+  if (e.target.id === "emailForm") {
+    var email = $("#email").value.trim().toLowerCase();
+    signin.email = email;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { signin.msg = "Please enter a valid email address."; signin.bad = true; return renderSignin(); }
+    signin.busy = true; signin.msg = ""; renderSignin();
+    sb.auth.signInWithOtp({email:email, options:{emailRedirectTo:appUrl(), shouldCreateUser:true}}).then(function(r){
+      signin.busy = false;
+      if (r.error) { signin.msg = /rate|seconds/i.test(r.error.message) ? "Please wait a minute before asking for another email." : "Couldn't send the email: " + r.error.message; signin.bad = true; }
+      else { signin.sent = true; signin.msg = ""; }
+      renderSignin();
+    });
+  } else if (e.target.id === "codeForm") {
+    var code = $("#code").value.replace(/\D/g, "");
+    if (code.length < 6) { signin.msg = "Type the 6-digit code from the email."; signin.bad = true; return renderSignin(); }
+    signin.busy = true; signin.msg = ""; renderSignin();
+    sb.auth.verifyOtp({email:signin.email, token:code, type:"email"}).then(function(r){
+      signin.busy = false;
+      if (r.error) { signin.msg = "That code didn't work. It may have expired; ask for a new email."; signin.bad = true; renderSignin(); }
+    });
+  }
+});
+$("#signinBody").addEventListener("click", function(e){
+  if (e.target.id === "googleBtn") {
+    signin.busy = true; renderSignin();
+    sb.auth.signInWithOAuth({provider:"google", options:{redirectTo:appUrl()}}).then(function(r){
+      if (r.error) { signin.busy = false; signin.msg = "Couldn't start Google sign-in: " + r.error.message; signin.bad = true; renderSignin(); }
+    });
+  } else if (e.target.id === "restartSignin") { signin = {email:signin.email, sent:false, busy:false, msg:"", bad:false}; renderSignin(); }
+});
+
+function startFor(u){
+  if (user && user.id === u.id) return;
+  user = {id:u.id, email:u.email};
+  signin = {email:"", sent:false, busy:false, msg:"", bad:false};
+  $("#signin").hidden = true; $("#appMain").hidden = false;
+  serverProgressCount = -1; loadedOnline = false;
+  outbox = {up:{}, del:{}, logs:[], wipe:false};
+  prog.p = {};
+  var cached = loadCached();
+  renderAccount();
+  if (cached) renderAll();
+  else $("#panel-cards").innerHTML = '<div class="panel-msg"><h2>Loading your words…</h2></div>';
+  var p = refresh();
+  if (/[?&]checkout=success/.test(location.search)) {
+    history.replaceState(null, "", location.pathname);
+    p.then(function(){ if (!hasAccess()) waitForMembership(); else toast("Welcome! Every level is unlocked."); });
+  }
+}
+
+/* ---------- online, offline, coming back to the app ---------- */
+window.addEventListener("online", function(){ setSaveStatus(); flush(); if (user && !loadedOnline) refresh(); });
+window.addEventListener("offline", function(){ setSaveStatus(); });
+document.addEventListener("visibilitychange", function(){
+  if (!user) return;
+  if (document.visibilityState === "hidden") { clearTimeout(flushTimer); flush(); return; }
+  if (Date.now() - lastPull > 30000 && outboxEmpty()) refresh();
+  else flush();
+  renderStairs();
+  if (prefs.mode === "cards" && !fc.revealed) { fc.cur = null; renderCard(); }
+});
+
+/* ---------- install and offline ---------- */
+var installBar = $("#installBar"), installText = $("#installText"), installBtn = $("#installBtn");
+var deferredPrompt = null;
+var standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function installDismissed(){ return !!lsGet("arvocab-install-dismissed"); }
+window.addEventListener("beforeinstallprompt", function(e){
+  e.preventDefault(); deferredPrompt = e;
+  if (standalone || installDismissed()) return;
+  installText.textContent = "Install this app for quick access from your home screen, even offline.";
+  installBtn.hidden = false; installBar.hidden = false;
+});
+if (isIOS && !standalone && !installDismissed()) {
+  installText.textContent = "To install on your iPhone or iPad, open this page in Safari, tap Share, then Add to Home Screen.";
+  installBtn.hidden = true; $("#installLater").textContent = "Got it"; installBar.hidden = false;
+}
+installBtn.addEventListener("click", function(){
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(function(){ deferredPrompt = null; installBar.hidden = true; });
+});
+$("#installLater").addEventListener("click", function(){ lsSet("arvocab-install-dismissed", 1); installBar.hidden = true; });
+window.addEventListener("appinstalled", function(){ installBar.hidden = true; });
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+  window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+}
+if (navigator.storage && navigator.storage.persist) { try { navigator.storage.persist().catch(function(){}); } catch (e) {} }
+
+function renderAll(){
+  $(".top p").hidden = false;
+  $("#total").textContent = summary.length ? summary.reduce(function(n, s){ return n + s.total; }, 0) : CARDS.length;
+  renderStairs();
+  renderAccount();
+  qz.qs = null;
+  setMode(prefs.mode);
+}
+
+if (!configured) { showSignedOut(); return; }
+// Supabase keeps the session here. Offline, an expired session can't be refreshed, but the
+// person is still the same, so we let them keep studying what's cached on this device.
+function storedUser(){
+  try {
+    var ref = new URL(CFG.supabaseUrl).hostname.split(".")[0];
+    var t = JSON.parse(localStorage.getItem("sb-" + ref + "-auth-token"));
+    return t && t.user && t.user.id ? t.user : null;
+  } catch (e) { return null; }
+}
+sb.auth.onAuthStateChange(function(event, session){
+  // Run outside the auth callback so Supabase calls made from here don't wait on its lock.
+  setTimeout(function(){
+    if (session && session.user) startFor(session.user);
+    else if (event === "SIGNED_OUT") showSignedOut();
+  }, 0);
+});
+sb.auth.getSession().then(function(r){
+  var s = r.data && r.data.session;
+  if (s && s.user) return startFor(s.user);
+  var cachedUser = storedUser();
+  if (cachedUser && (!navigator.onLine || r.error)) startFor(cachedUser);
+  else if (!user) showSignedOut();
+}).catch(function(){
+  var cachedUser = storedUser();
+  if (cachedUser) startFor(cachedUser); else showSignedOut();
+});
+})();

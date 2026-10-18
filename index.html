@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Breathe Arabic</title>
+<meta name="description" content="Breathe Arabic: spaced-repetition flashcards, quizzes and a word list for learning Modern Standard Arabic vocabulary, sorted by CEFR level.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#F2F3EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10151F" media="(prefers-color-scheme: dark)">
+<script>
+/* Opened from the home screen: always dark, including the phone's status bar. Runs before anything is drawn. */
+(function(){
+  var installed = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+  if (!installed) return;
+  document.documentElement.setAttribute("data-theme", "dark");
+  var metas = document.querySelectorAll('meta[name="theme-color"]');
+  for (var i = 0; i < metas.length; i++) { metas[i].setAttribute("content", "#10151F"); metas[i].removeAttribute("media"); }
+})();
+</script>
+<link rel="icon" type="image/png" href="icons/favicon-64.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<!-- iPhone/iPad launch screens (dark), one per screen size -->
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1320x2868.png" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1206x2622.png" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1260x2736.png" media="(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1179x2556.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1284x2778.png" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1125x2436.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1242x2688.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-828x1792.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1242x2208.png" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-750x1334.png" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-640x1136.png" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-2064x2752.png" media="(device-width: 1032px) and (device-height: 1376px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-2048x2732.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1668x2420.png" media="(device-width: 834px) and (device-height: 1210px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1668x2388.png" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1640x2360.png" media="(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1668x2224.png" media="(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1620x2160.png" media="(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1536x2048.png" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="icons/splash/splash-1488x2266.png" media="(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Breathe Arabic">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --paper:#F2F3EE; --surface:#FFFFFF; --ink:#18233A; --muted:#5A6377; --line:#D7DAD0;
+  --lapis:#2546A8; --lapis-ink:#FFFFFF; --lapis-soft:rgba(37,70,168,.09);
+  --known:#1D7A64; --known-soft:rgba(29,122,100,.22);
+  --learning:#A86A0E; --learning-soft:rgba(185,120,26,.14);
+  --wrong:#B3261E; --wrong-soft:rgba(179,38,30,.10);
+  --step:#E4E6DE;
+  --ar:"Amiri","Noto Naskh Arabic","Geeza Pro","Traditional Arabic","Times New Roman",serif;
+  --ui:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#10151F; --surface:#182031; --ink:#E7EAF1; --muted:#9BA4B6; --line:#2A3448;
+    --lapis:#93A9FF; --lapis-ink:#0E1424; --lapis-soft:rgba(147,169,255,.12);
+    --known:#4FC2A2; --known-soft:rgba(79,194,162,.24);
+    --learning:#E3A93F; --learning-soft:rgba(227,169,63,.16);
+    --wrong:#FF8A80; --wrong-soft:rgba(255,138,128,.13);
+    --step:#1E283A; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#10151F; --surface:#182031; --ink:#E7EAF1; --muted:#9BA4B6; --line:#2A3448;
+  --lapis:#93A9FF; --lapis-ink:#0E1424; --lapis-soft:rgba(147,169,255,.12);
+  --known:#4FC2A2; --known-soft:rgba(79,194,162,.24);
+  --learning:#E3A93F; --learning-soft:rgba(227,169,63,.16);
+  --wrong:#FF8A80; --wrong-soft:rgba(255,138,128,.13);
+  --step:#1E283A; color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;background:var(--paper);scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;min-height:100%;background:var(--paper);color:var(--ink);font-family:var(--ui);font-size:16px;line-height:1.5;-webkit-text-size-adjust:100%}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2.5px solid var(--lapis);outline-offset:2px}
+[hidden]{display:none!important}
+.ar{font-family:var(--ar);direction:rtl;unicode-bidi:isolate}
+
+.wrap{max-width:760px;margin:0 auto;padding:28px 20px 56px}
+
+/* masthead */
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:26px}
+.top h1{margin:0;font-size:1.6rem;line-height:1.15;font-weight:600;letter-spacing:-.01em}
+.top p{margin:6px 0 0;color:var(--muted);font-size:.95rem;max-width:34ch}
+.mark{font-family:var(--ar);font-size:3.1rem;line-height:1;color:var(--lapis);font-weight:700;white-space:nowrap}
+.logo{flex:none;width:72px;height:72px;border-radius:16px;display:block}
+.top:has(.logo){justify-content:flex-start;align-items:center}
+
+/* CEFR staircase */
+.stairs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;align-items:end;height:148px}
+.step{position:relative;overflow:hidden;height:calc(58px + var(--i) * 17px);border:1.5px solid transparent;border-radius:10px 10px 3px 3px;background:var(--step);padding:7px 8px;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;text-align:left;transition:border-color .15s,background-color .15s}
+.step .fill{position:absolute;inset:auto 0 0 0;height:var(--fill,0%);background:var(--known-soft);transition:height .4s ease}
+.step .lv,.step .ct{position:relative}
+.step .lv{font-weight:600;font-size:1.05rem;line-height:1.1}
+.step .ct{font-size:.75rem;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1.3}
+.step[aria-pressed="true"]{border-color:var(--lapis);background:var(--surface)}
+.step[aria-pressed="true"] .lv{color:var(--lapis)}
+.step:disabled{cursor:default;opacity:.45}
+.levels-meta{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:10px;font-size:.9rem;color:var(--muted)}
+.link{background:none;border:0;padding:2px 0;color:var(--lapis);font-weight:500;text-decoration:underline;text-underline-offset:3px}
+
+/* mode switch and filters */
+.tabs{display:flex;gap:4px;margin:28px 0 14px;padding:4px;border-radius:12px;background:var(--step)}
+.tab{flex:1;border:0;background:transparent;padding:9px 10px;border-radius:9px;font-weight:500;color:var(--muted)}
+.tab[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 0 var(--line)}
+.filters{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-bottom:18px;font-size:.92rem}
+.filters label{display:flex;align-items:center;gap:8px;color:var(--muted)}
+.filters select{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--ink)}
+.filters input[type=checkbox]{width:18px;height:18px;accent-color:var(--lapis);margin:0}
+.banner{display:flex;justify-content:space-between;gap:12px;align-items:center;background:var(--lapis-soft);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:.92rem}
+
+/* flashcard */
+.meta{display:flex;justify-content:space-between;align-items:baseline;font-size:.9rem;color:var(--muted);margin-bottom:10px;font-variant-numeric:tabular-nums}
+.card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:18px;min-height:320px;padding:18px 20px 22px;display:flex;flex-direction:column;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.card-top{display:flex;align-items:center;gap:8px;min-height:32px}
+.pill{font-size:.78rem;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--lapis-soft);color:var(--lapis)}
+.tytag{font-size:.82rem;color:var(--muted)}
+.st{margin-left:auto;font-size:.8rem;font-weight:500;padding:2px 9px;border-radius:999px}
+.st.s1{background:var(--learning-soft);color:var(--learning)}
+.st.s2{background:var(--known-soft);color:var(--known)}
+.listen{border:1px solid var(--line);background:transparent;border-radius:999px;padding:3px 11px;font-size:.82rem;color:var(--muted);display:none}
+.can-speak .listen{display:inline-block}
+.prompt{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;padding:22px 4px 14px}
+.prompt.is-ar{font-family:var(--ar);direction:rtl;font-size:clamp(2.6rem,10vw,4.6rem);line-height:1.35;font-weight:700}
+.prompt.is-ar.long{font-size:clamp(2rem,7vw,3.2rem)}
+.prompt.is-ar.xlong{font-size:clamp(1.6rem,5.5vw,2.4rem)}
+.prompt.is-en{font-size:clamp(1.5rem,5vw,2.1rem);line-height:1.3;font-weight:500;max-width:22ch;margin:0 auto}
+.answer{border-top:1px dashed var(--line);padding-top:16px;text-align:center}
+.answer-main.is-en{font-size:1.35rem;font-weight:600;line-height:1.35}
+.answer-main.is-ar{font-family:var(--ar);direction:rtl;font-size:2.4rem;font-weight:700;line-height:1.4}
+.examples{margin:14px auto 0;max-width:56ch;display:grid;gap:12px;text-align:center}
+.ex .ex-ar{font-family:var(--ar);direction:rtl;font-size:1.4rem;line-height:1.7;margin:0}
+.ex .ex-en{color:var(--muted);margin:2px 0 0;font-size:.95rem}
+.tap{text-align:center;color:var(--muted);font-size:.88rem;margin-top:4px}
+@media (prefers-reduced-motion: no-preference){ .answer{animation:rise .22s ease-out} @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}} }
+
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.actions.single{grid-template-columns:1fr}
+.btn{border:1.5px solid var(--line);background:var(--surface);border-radius:12px;padding:13px 14px;font-weight:600;font-size:1rem}
+.btn.primary{background:var(--lapis);border-color:var(--lapis);color:var(--lapis-ink)}
+.btn.learning{border-color:var(--learning);color:var(--learning)}
+.btn.known{border-color:var(--known);background:var(--known);color:var(--surface)}
+.btn kbd{font-family:var(--ui);font-size:.75rem;opacity:.7;margin-left:6px;font-weight:500}
+.hint{font-size:.85rem;color:var(--muted);text-align:center;margin:12px 0 0}
+@media (hover:none){ .hint, .btn kbd{display:none} }
+
+.panel-msg{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px 22px;text-align:center}
+.panel-msg h2{margin:0 0 6px;font-size:1.3rem;font-weight:600}
+.panel-msg p{margin:0 auto;color:var(--muted);max-width:44ch}
+.panel-msg .actions{max-width:460px;margin:18px auto 0}
+.big-score{font-size:3rem;font-weight:600;line-height:1;margin:4px 0 8px;font-variant-numeric:tabular-nums}
+
+/* quiz */
+.qprompt{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px 20px 24px}
+.qprompt .prompt{min-height:150px;padding:14px 0 6px}
+.opts{display:grid;gap:8px;margin-top:12px}
+.opt{display:flex;align-items:center;gap:12px;text-align:left;border:1.5px solid var(--line);background:var(--surface);border-radius:12px;padding:12px 14px;font-size:1.02rem;line-height:1.35}
+.opt .k{flex:none;width:24px;height:24px;border-radius:7px;background:var(--step);color:var(--muted);font-size:.8rem;font-weight:600;display:grid;place-items:center}
+.opt .t.ar{font-size:1.55rem;line-height:1.4;flex:1;text-align:right}
+.opt.correct{border-color:var(--known);background:var(--known-soft)}
+.opt.wrong{border-color:var(--wrong);background:var(--wrong-soft)}
+.opt:disabled{cursor:default;color:var(--ink)}
+.feedback{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--step);font-size:.95rem}
+.feedback .ex-ar{font-family:var(--ar);direction:rtl;font-size:1.3rem;line-height:1.7;margin:6px 0 0;text-align:right}
+.feedback .ex-en{color:var(--muted);margin:0}
+.lengths{display:flex;gap:8px;justify-content:center;margin-top:16px}
+.lengths button{border:1.5px solid var(--line);background:transparent;border-radius:999px;padding:6px 14px;font-weight:500}
+.lengths button[aria-pressed="true"]{border-color:var(--lapis);color:var(--lapis);background:var(--lapis-soft)}
+.misses{text-align:left;margin:18px auto 0;max-width:520px;display:grid;gap:6px}
+.miss{display:flex;justify-content:space-between;gap:12px;align-items:center;border-top:1px solid var(--line);padding-top:8px}
+.miss .ar{font-size:1.35rem}
+
+/* word list */
+.search{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:11px 14px;font-size:1rem;margin-bottom:14px}
+.lvhead{display:flex;align-items:baseline;gap:10px;margin:22px 0 6px;font-weight:600}
+.lvhead span{font-weight:400;color:var(--muted);font-size:.9rem}
+.row{border-top:1px solid var(--line)}
+.row-main{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:8px 0}
+.dot{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);background:transparent;display:grid;place-items:center;padding:0}
+.dot::after{content:"";width:10px;height:10px;border-radius:50%;background:transparent}
+.dot.s1{border-color:var(--learning)} .dot.s1::after{background:var(--learning)}
+.dot.s2{border-color:var(--known);background:var(--known)} .dot.s2::after{background:var(--surface);width:8px;height:8px}
+.row-en{border:0;background:none;text-align:left;padding:4px 0;color:var(--ink);font-size:.97rem;line-height:1.35}
+.row-en small{display:block;color:var(--muted);font-size:.8rem}
+.row-ar{font-family:var(--ar);direction:rtl;font-size:1.45rem;line-height:1.5;text-align:right;max-width:52vw}
+.row-ex{padding:0 0 12px 42px}
+.row-ex .ex-ar{font-family:var(--ar);direction:rtl;font-size:1.25rem;line-height:1.7;margin:4px 0 0;text-align:right}
+.row-ex .ex-en{color:var(--muted);margin:0;font-size:.92rem}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:.85rem;color:var(--muted);margin-bottom:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+
+.installbar{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:-8px 0 22px;font-size:.93rem}
+.installbar p{margin:0}
+.installbar .btns{display:flex;gap:8px;flex:none}
+.installbar .btn{padding:8px 14px;font-size:.92rem}
+.syncbox{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;color:var(--ink)}
+.syncbox h2{margin:0 0 4px;font-size:1rem;font-weight:600}
+.syncbox p{margin:0;color:var(--muted)}
+.syncbox p.on{color:var(--known)}
+.syncbox p.bad{color:var(--wrong)}
+.syncbox label{display:block;margin:12px 0 6px;font-weight:500}
+.syncbox input{width:100%;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:10px;padding:9px 11px;font-size:.9rem}
+.syncbox .row-btns{display:flex;gap:14px;align-items:center;margin-top:10px}
+.syncbox .btn{padding:9px 16px;font-size:.92rem}
+.transfer{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.transfer summary{cursor:pointer;font-weight:600;color:var(--ink)}
+.transfer[open] summary{margin-bottom:8px}
+.transfer p{margin:0 0 8px}
+.transfer label{display:block;margin:14px 0 6px;color:var(--ink);font-weight:500}
+.transfer textarea{width:100%;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:10px;padding:8px 10px;font:inherit;font-size:.85rem;resize:vertical}
+.transfer .btn{margin-top:8px;padding:9px 14px;font-size:.92rem}
+.transfer .msg{margin-top:8px;color:var(--ink)}
+@media (max-width:520px){ .installbar{flex-direction:column;align-items:stretch} .installbar .btns{justify-content:flex-end} }
+footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-size:.85rem;color:var(--muted);display:grid;gap:8px}
+footer p{margin:0;max-width:62ch}
+.danger{color:var(--wrong)}
+
+@media (max-width:520px){
+  .wrap{padding:20px 14px 44px}
+  .mark{font-size:2.4rem}
+  .logo{width:56px;height:56px;border-radius:13px}
+  .top h1{font-size:1.35rem}
+  .stairs{height:132px;gap:4px}
+  .step{height:calc(50px + var(--i) * 15px);padding:6px 6px}
+  .step .lv{font-size:.95rem}
+  .step .ct{font-size:.68rem}
+  .card{min-height:300px;padding:16px 14px 20px}
+  .row-ar{max-width:46vw}
+}
+
+/* spaced repetition additions */
+.counts{display:flex;gap:14px;flex-wrap:wrap}
+.counts b{font-weight:600}
+.counts .cn b{color:var(--lapis)}
+.counts .cl b{color:var(--learning)}
+.counts .cr b{color:var(--known)}
+.meta-right{display:flex;gap:14px;align-items:baseline}
+.grade{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}
+.gbtn{border:1.5px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 4px 9px;display:flex;flex-direction:column;align-items:center;gap:1px;font-weight:600;font-size:1rem;line-height:1.2}
+.gbtn small{font-weight:500;font-size:.8rem;opacity:.8;font-variant-numeric:tabular-nums}
+.gbtn kbd{font-family:var(--ui);font-size:.7rem;opacity:.6;font-weight:500}
+.grade.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grade.two .gbtn{padding:13px 8px 11px;font-size:1.02rem}
+.card .mem{text-align:center;margin-top:14px;font-size:.85rem}
+.gbtn.again{color:var(--wrong);border-color:var(--wrong)}
+.gbtn.hard{color:var(--learning);border-color:var(--learning)}
+.gbtn.good{background:var(--known);border-color:var(--known);color:var(--surface)}
+.gbtn.easy{color:var(--lapis);border-color:var(--lapis)}
+@media (hover:none){ .gbtn kbd{display:none} }
+.st.s3{background:var(--wrong-soft);color:var(--wrong)}
+.mem{font-size:.88rem;color:var(--muted);margin:8px 0 0}
+.row-ex .btn{margin-top:10px;padding:7px 12px;font-size:.85rem}
+.dot{cursor:default}
+.dot.s3{border-color:var(--learning)} .dot.s3::after{background:var(--learning)}
+.done-list{margin:14px auto 0;max-width:44ch;color:var(--muted);text-align:left;display:grid;gap:6px}
+/* accounts and membership */
+.signin{max-width:440px;margin:6vh auto 0;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:26px 22px}
+.signin h2{margin:0 0 6px;font-size:1.3rem;font-weight:600}
+.signin > p{margin:0 0 16px;color:var(--muted)}
+.signin form{display:grid;gap:10px}
+.signin label{font-weight:500;font-size:.95rem}
+.signin input{width:100%;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:10px;padding:11px 12px;font-size:1rem}
+.signin .btn{width:100%}
+.signin .or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.85rem;margin:14px 0}
+.signin .or::before,.signin .or::after{content:"";flex:1;border-top:1px solid var(--line)}
+.signin .msg{margin:12px 0 0;color:var(--muted)}
+.signin .bad,.bad{color:var(--wrong)}
+.signin p.msg.bad{color:var(--wrong)}
+.signin .legal{margin:18px 0 0;font-size:.82rem;color:var(--muted)}
+.signin .legal a,footer a{color:var(--lapis)}
+.step.locked .ct{color:var(--lapis);font-weight:600}
+.banner .btn{padding:7px 14px;font-size:.9rem;flex:none}
+.locked-row{padding:10px 0;color:var(--muted)}
+.locked-row p{margin:0}
+.import .import-opts{display:grid;gap:14px;max-width:460px;margin:18px auto 0;text-align:left}
+.import .import-sheet{display:grid;gap:8px}
+.import label{font-size:.92rem;color:var(--muted)}
+.import input{width:100%;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:10px;padding:9px 11px;font-size:.9rem}
+.import .msg{margin-top:12px;color:var(--ink)}
+.import > p:last-child{margin-top:14px}
+.acct .acct-btns{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px}
+.acct .acct-btns:empty{display:none}
+.acct .acct-btns .btn{padding:9px 16px;font-size:.92rem;text-decoration:none;color:var(--ink)}
+.acct .acct-btns .btn.primary{color:var(--lapis-ink)}
+.acct .who{color:var(--ink);font-weight:500;margin:0 0 2px}
+.acct .save{margin-top:8px;font-size:.88rem}
+.acct .links{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;align-items:center}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);max-width:calc(100% - 32px);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:12px;font-size:.92rem;box-shadow:0 6px 24px rgba(0,0,0,.18);z-index:10}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <img class="logo" src="icons/logo-mark-160.png" width="72" height="72" alt="Breathe Arabic logo: the Arabic word nafas, breath">
+    <div>
+      <h1>Breathe Arabic</h1>
+      <p><span id="total"></span> Arabic words, sorted by CEFR level</p>
+    </div>
+  </header>
+
+  <section class="signin" id="signin" aria-labelledby="signinTitle" hidden>
+    <h2 id="signinTitle">Sign in to Breathe Arabic</h2>
+    <p>Spaced-repetition flashcards for Modern Standard Arabic. A free account opens A1 and A2; members get every level. Your progress syncs across your devices.</p>
+    <div id="signinBody"></div>
+    <p class="legal">By signing in you agree to the <a href="terms">terms</a>. See how your data is handled in the <a href="privacy">privacy policy</a>.</p>
+  </section>
+
+  <div id="appMain" hidden>
+  <div class="installbar" id="installBar" hidden>
+    <p id="installText"></p>
+    <div class="btns">
+      <button class="btn" id="installLater" type="button">Not now</button>
+      <button class="btn primary" id="installBtn" type="button">Install</button>
+    </div>
+  </div>
+
+  <section aria-label="Choose levels">
+    <div class="stairs" id="stairs"></div>
+    <div class="levels-meta"><span id="levelSummary" aria-live="polite"></span><button class="link" id="allBtn" type="button">Select all levels</button></div>
+  </section>
+
+  <div class="tabs" role="tablist" aria-label="Study mode">
+    <button class="tab" role="tab" id="tab-cards" data-mode="cards" type="button">Flashcards</button>
+    <button class="tab" role="tab" id="tab-quiz" data-mode="quiz" type="button">Quiz</button>
+    <button class="tab" role="tab" id="tab-list" data-mode="list" type="button">Word list</button>
+  </div>
+
+  <div class="filters">
+    <label>Word type
+      <select id="typeSel">
+        <option value="all">All types</option>
+        <option value="n">Nouns</option>
+        <option value="v">Verbs</option>
+        <option value="a">Adjectives</option>
+        <option value="p">Phrases</option>
+        <option value="other">Adverbs and particles</option>
+      </select>
+    </label>
+    <label id="dirWrap">Show first
+      <select id="dirSel">
+        <option value="ar">Arabic</option>
+        <option value="en">English</option>
+      </select>
+    </label>
+    <label id="newWrap">New words a day
+      <select id="newSel">
+        <option value="5">5</option>
+        <option value="10">10</option>
+        <option value="15">15</option>
+        <option value="20">20</option>
+        <option value="30">30</option>
+        <option value="50">50</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="banner" id="lockBanner" hidden></div>
+
+  <main>
+    <section id="panel-cards" role="tabpanel" aria-labelledby="tab-cards"></section>
+    <section id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden></section>
+    <section id="panel-list" role="tabpanel" aria-labelledby="tab-list" hidden>
+      <input class="search" id="search" type="search" placeholder="Search in Arabic or English" aria-label="Search words" autocomplete="off">
+      <div class="legend"><span><i style="border:1.5px solid var(--line)"></i>New</span><span><i style="background:var(--learning)"></i>Learning</span><span><i style="background:var(--known)"></i>Learned</span><span>Tap a word to see its example and memory details.</span></div>
+      <div id="list"></div>
+    </section>
+  </main>
+
+  <footer>
+    <section class="syncbox acct" aria-labelledby="acctTitle">
+      <h2 id="acctTitle">Your account</h2>
+      <p class="who" id="acctEmail"></p>
+      <p id="acctPlan"></p>
+      <p class="save" id="saveStatus" aria-live="polite"></p>
+      <div class="acct-btns" id="acctBtns"></div>
+      <div class="links">
+        <button class="link" id="signOutBtn" type="button">Sign out</button>
+        <button class="link" data-act="import-open" type="button">Import progress from the earlier app</button>
+      </div>
+    </section>
+    <p>Words come up in order of when they're due, oldest first, whatever their level. New words are added in deck order. Reviews are scheduled with FSRS, the memory model Anki uses, with two buttons like a pass/fail setup. Each time you remember a word, its memory gets stronger and the next review moves further out. Each time you forget it, the memory weakens and the word comes back within minutes. Every word returns when your chance of remembering it drops to about 90%. A new study day starts at 4am.</p>
+    <p>CEFR has no official word list for Arabic, so the levels here are estimates for learners of Modern Standard Arabic, based on how common and how abstract each word is.</p>
+    <p><a href="privacy">Privacy</a> · <a href="terms">Terms</a></p>
+    <p><button class="link danger" id="resetBtn" type="button">Reset all my progress</button></p>
+  </footer>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="config.js"></script>
+<script src="vendor/supabase-js-2.117.2.js"></script>
+<script src="fsrs.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

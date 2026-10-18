@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Breathe Arabic Admin</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="icons/favicon-64.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F2F3EE; --surface:#FFFFFF; --ink:#18233A; --muted:#5A6377; --line:#D7DAD0;
+  --lapis:#2546A8; --lapis-ink:#FFFFFF; --lapis-soft:rgba(37,70,168,.09);
+  --known:#1D7A64; --known-soft:rgba(29,122,100,.22);
+  --learning:#A86A0E; --learning-soft:rgba(185,120,26,.14);
+  --wrong:#B3261E; --wrong-soft:rgba(179,38,30,.10);
+  --step:#E4E6DE;
+  --ar:"Amiri","Noto Naskh Arabic","Geeza Pro","Traditional Arabic","Times New Roman",serif;
+  --ui:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#10151F; --surface:#182031; --ink:#E7EAF1; --muted:#9BA4B6; --line:#2A3448;
+    --lapis:#93A9FF; --lapis-ink:#0E1424; --lapis-soft:rgba(147,169,255,.12);
+    --known:#4FC2A2; --known-soft:rgba(79,194,162,.24);
+    --learning:#E3A93F; --learning-soft:rgba(227,169,63,.16);
+    --wrong:#FF8A80; --wrong-soft:rgba(255,138,128,.13);
+    --step:#1E283A; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#10151F; --surface:#182031; --ink:#E7EAF1; --muted:#9BA4B6; --line:#2A3448;
+  --lapis:#93A9FF; --lapis-ink:#0E1424; --lapis-soft:rgba(147,169,255,.12);
+  --known:#4FC2A2; --known-soft:rgba(79,194,162,.24);
+  --learning:#E3A93F; --learning-soft:rgba(227,169,63,.16);
+  --wrong:#FF8A80; --wrong-soft:rgba(255,138,128,.13);
+  --step:#1E283A; color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--ui);font-size:16px;line-height:1.5}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2.5px solid var(--lapis);outline-offset:2px}
+[hidden]{display:none!important}
+.ar{font-family:var(--ar);direction:rtl;unicode-bidi:isolate;font-size:1.35rem;line-height:1.5}
+.wrap{max-width:960px;margin:0 auto;padding:28px 20px 56px}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:22px}
+.top h1{margin:0;font-size:1.5rem;font-weight:600}
+.top a{color:var(--lapis)}
+section.box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 18px 20px;margin-bottom:18px}
+section.box h2{margin:0 0 4px;font-size:1.1rem;font-weight:600}
+section.box > p{margin:0 0 12px;color:var(--muted);font-size:.93rem}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.stat{background:var(--paper);border-radius:12px;padding:10px 12px}
+.stat b{display:block;font-size:1.6rem;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.2}
+.stat span{font-size:.85rem;color:var(--muted)}
+.btn{border:1.5px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 14px;font-weight:600;font-size:.93rem}
+.btn.primary{background:var(--lapis);border-color:var(--lapis);color:var(--lapis-ink)}
+.btn.small{padding:4px 10px;font-size:.82rem}
+.btn:disabled{opacity:.5;cursor:default}
+.link{background:none;border:0;padding:2px 0;color:var(--lapis);font-weight:500;text-decoration:underline;text-underline-offset:3px}
+.danger{color:var(--wrong)}
+input[type=text],input[type=email],input[type=url],input[type=search],select,textarea{border:1px solid var(--line);background:var(--paper);border-radius:9px;padding:7px 9px;font-size:.93rem;width:100%}
+.form{display:grid;grid-template-columns:2fr 1fr 2fr auto;gap:8px;align-items:end}
+.form label{display:grid;gap:4px;font-size:.85rem;color:var(--muted)}
+.notify{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:.9rem;color:var(--muted)}
+.notify input{width:18px;height:18px;accent-color:var(--lapis);margin:0}
+@media (max-width:700px){ .form{grid-template-columns:1fr} }
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th,td{text-align:left;padding:7px 6px;border-top:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
+.tablewrap{overflow-x:auto;max-height:480px;overflow-y:auto}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--step);color:var(--muted)}
+.tag.active{background:var(--known-soft);color:var(--known)}
+.tag.comp{background:var(--lapis-soft);color:var(--lapis)}
+.tag.past_due,.tag.canceled{background:var(--learning-soft);color:var(--learning)}
+.msg{margin:10px 0 0;font-size:.92rem}
+.msg.bad{color:var(--wrong)} .msg.ok{color:var(--known)}
+.row-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.word{border-top:1px solid var(--line);padding:12px 0;display:grid;gap:8px}
+.word-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+.word-head small{color:var(--muted)}
+.word-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px}
+.word-grid label,.word-ex label{display:grid;gap:3px;font-size:.8rem;color:var(--muted)}
+.word-ex{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.word-ex input.ar-in{font-family:var(--ar);direction:rtl;font-size:1.15rem}
+.word.skip{opacity:.55}
+.word .choice{display:flex;gap:14px;font-size:.88rem}
+.word .choice label{display:flex;gap:5px;align-items:center}
+.missing{outline:1.5px solid var(--learning)}
+@media (max-width:700px){ .word-grid,.word-ex{grid-template-columns:1fr} }
+.center{max-width:440px;margin:10vh auto;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Breathe Arabic admin</h1>
+    <a href="./">Back to the app</a>
+  </header>
+
+  <div id="gate" class="center"><p>Loading…</p></div>
+
+  <div id="admin" hidden>
+    <section class="box" aria-labelledby="statsTitle">
+      <h2 id="statsTitle">Members</h2>
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <section class="box" aria-labelledby="giftTitle">
+      <h2 id="giftTitle">Gift or remove access</h2>
+      <p>Works whether or not the person has signed up yet. If they haven't, the gift starts the moment they sign up with that email.</p>
+      <form class="form" id="giftForm" novalidate>
+        <label>Email<input type="email" id="giftEmail" required autocomplete="off" placeholder="friend@example.com"></label>
+        <label>How long
+          <select id="giftMonths">
+            <option value="1">1 month</option>
+            <option value="3">3 months</option>
+            <option value="6">6 months</option>
+            <option value="12">1 year</option>
+            <option value="">Lifetime</option>
+          </select>
+        </label>
+        <label>Note (only you see it)<input type="text" id="giftNote" maxlength="200" placeholder="e.g. my teacher's student"></label>
+        <button class="btn primary" type="submit">Gift access</button>
+      </form>
+      <label class="notify"><input type="checkbox" id="giftNotify" checked> Email them about it (tells new people to sign up with that address)</label>
+      <div class="row-actions"><button class="link danger" id="revokeBtn" type="button">Remove a gift from this email instead</button></div>
+      <p class="msg" id="giftMsg" aria-live="polite"></p>
+    </section>
+
+    <section class="box" aria-labelledby="listTitle">
+      <h2 id="listTitle">Member list</h2>
+      <p>Paid members manage or cancel their own subscriptions through Polar. "Remove" here only takes away gifts.</p>
+      <input type="search" id="memberSearch" placeholder="Search by email" aria-label="Search members">
+      <div class="tablewrap"><table>
+        <thead><tr><th>Email</th><th>Signed up</th><th>Access</th><th>Until</th><th>Note</th><th></th></tr></thead>
+        <tbody id="members"></tbody>
+      </table></div>
+      <h2 style="margin-top:18px">Gifts waiting for a sign-up</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Email</th><th>Length</th><th>Note</th><th>Created</th><th></th></tr></thead>
+        <tbody id="pending"></tbody>
+      </table></div>
+    </section>
+
+    <section class="box" aria-labelledby="deckTitle">
+      <h2 id="deckTitle">Publish deck</h2>
+      <p>Reads the "Arabic Vocab" tab of your Google Sheet and finds words that aren't in the app yet. New words need an English meaning, a level and a type before they can be published. Words already in the app are never overwritten from the sheet.</p>
+      <label for="sheetUrl" style="font-size:.88rem;color:var(--muted)">Your sheet's Apps Script link (the same /exec link the old app used)</label>
+      <div class="row-actions" style="margin-top:4px">
+        <input type="url" id="sheetUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" spellcheck="false" style="flex:1;min-width:240px">
+        <button class="btn primary" id="checkSheet" type="button">Check sheet for new words</button>
+      </div>
+      <p class="msg" id="deckMsg" aria-live="polite"></p>
+      <div id="deckReview"></div>
+    </section>
+
+    <section class="box" aria-labelledby="backupTitle">
+      <h2 id="backupTitle">Backup</h2>
+      <p>Supabase's free plan keeps no backups, so download one every week. It's a single file with every account, membership, card and answer. Keep it somewhere private, such as a folder in your Google Drive; it contains members' email addresses.</p>
+      <div class="row-actions"><button class="btn primary" id="backupBtn" type="button">Download backup</button><span id="backupLast" class="msg"></span></div>
+    </section>
+  </div>
+</div>
+<script src="config.js"></script>
+<script src="vendor/supabase-js-2.117.2.js"></script>
+<script>
+(function(){
+"use strict";
+var CFG = window.ARVOCAB_CONFIG || {};
+var LV = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
+var TY = {n:"noun", v:"verb", a:"adjective", d:"adverb", p:"phrase", r:"particle"};
+var $ = function(s){ return document.querySelector(s); };
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(ch){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]; }); }
+function lsGet(k){ try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function day(iso){ return iso ? new Date(iso).toLocaleDateString([], {day:"numeric", month:"short", year:"numeric"}) : ""; }
+function check(q){ return q.then(function(r){ if (r.error) throw r.error; return r; }); }
+function setMsg(el, text, cls){ el.textContent = text; el.className = "msg" + (cls ? " " + cls : ""); }
+
+if (!CFG.supabaseUrl || !CFG.supabaseKey) { $("#gate").innerHTML = "<p>Fill in config.js first (see SETUP.md).</p>"; return; }
+var sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey);
+var me = null;
+
+function fetchAll(table, cols, order){
+  var out = [];
+  function page(from){
+    return check(sb.from(table).select(cols).order(order, {ascending:true}).range(from, from + 999)).then(function(r){
+      out = out.concat(r.data || []);
+      return r.data && r.data.length === 1000 ? page(from + 1000) : out;
+    });
+  }
+  return page(0);
+}
+
+sb.auth.getSession().then(function(r){
+  var s = r.data && r.data.session;
+  if (!s) { $("#gate").innerHTML = '<p>Sign in on the <a href="./">app</a> first, then come back here.</p>'; return; }
+  me = s.user;
+  return check(sb.from("profiles").select("role").eq("id", me.id).maybeSingle()).then(function(p){
+    if (!p.data || p.data.role !== "admin") { $("#gate").innerHTML = "<p>This page is only for the admin.</p>"; return; }
+    $("#gate").hidden = true; $("#admin").hidden = false;
+    loadMembers(); initDeck(); initBackup();
+  });
+}).catch(function(e){ $("#gate").innerHTML = "<p>Couldn't load: " + esc(e.message) + "</p>"; });
+
+/* ---------- members ---------- */
+var members = [], pending = [];
+function hasAccess(m){
+  if (!m) return false;
+  var end = m.current_period_end ? Date.parse(m.current_period_end) : null, now = Date.now();
+  if ((m.status === "active" || m.status === "comp") && (end == null || end > now)) return true;
+  return (m.status === "canceled" || m.status === "past_due") && end != null && end > now;
+}
+function accessLabel(m){
+  if (!m) return ["free", "Free"];
+  var on = hasAccess(m);
+  if (m.status === "comp") return on ? ["comp", "Gift"] : ["", "Gift ended"];
+  if (m.status === "active") return on ? ["active", "Paying"] : ["", "Ended"];
+  if (m.status === "canceled") return on ? ["canceled", "Cancelled, still active"] : ["", "Cancelled"];
+  if (m.status === "past_due") return on ? ["past_due", "Payment failed"] : ["", "Payment failed, ended"];
+  return ["", "Free"];
+}
+function loadMembers(){
+  return Promise.all([
+    fetchAll("profiles", "id,email,role,created_at", "created_at"),
+    fetchAll("memberships", "*", "user_id"),
+    fetchAll("pending_grants", "*", "created_at")
+  ]).then(function(res){
+    var ms = new Map(res[1].map(function(m){ return [m.user_id, m]; }));
+    members = res[0].map(function(p){ return Object.assign({}, p, {m:ms.get(p.id) || null}); }).reverse();
+    pending = res[2];
+    renderStats(); renderMembers(); renderPending();
+  }).catch(function(e){ setMsg($("#giftMsg"), "Couldn't load members: " + e.message, "bad"); });
+}
+function renderStats(){
+  var now = Date.now(), weekAgo = now - 7 * 86400000;
+  var paying = members.filter(function(x){ return x.m && x.m.source === "payment" && hasAccess(x.m); }).length;
+  var gifted = members.filter(function(x){ return x.m && x.m.status === "comp" && hasAccess(x.m); }).length;
+  var recent = members.filter(function(x){ return Date.parse(x.created_at) > weekAgo; }).length;
+  var stats = [[members.length, "sign-ups"], [recent, "new this week"], [paying, "paying members"], [gifted, "gifted members"], [members.length - paying - gifted, "free accounts"], [pending.length, "gifts waiting"]];
+  $("#stats").innerHTML = stats.map(function(s){ return '<div class="stat"><b>' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join("");
+}
+function renderMembers(){
+  var q = $("#memberSearch").value.trim().toLowerCase();
+  var list = members.filter(function(x){ return !q || (x.email || "").indexOf(q) > -1; });
+  $("#members").innerHTML = list.map(function(x){
+    var a = accessLabel(x.m), m = x.m || {};
+    var until = m.status && m.status !== "free" ? (m.current_period_end ? day(m.current_period_end) : (m.status === "comp" ? "lifetime" : "")) : "";
+    return '<tr><td>' + esc(x.email) + (x.role === "admin" ? ' <span class="tag comp">admin</span>' : "") + '</td><td>' + day(x.created_at) + '</td>' +
+      '<td><span class="tag ' + a[0] + '">' + a[1] + '</span></td><td>' + esc(until) + '</td><td>' + esc(m.note || "") + '</td>' +
+      '<td>' + (m.status === "comp" ? '<button class="btn small" data-revoke="' + esc(x.email) + '" type="button">Remove gift</button>' : "") + '</td></tr>';
+  }).join("") || '<tr><td colspan="6">No members yet.</td></tr>';
+}
+function renderPending(){
+  $("#pending").innerHTML = pending.map(function(g){
+    return '<tr><td>' + esc(g.email) + '</td><td>' + (g.months ? g.months + (g.months === 1 ? " month" : " months") : "lifetime") + '</td><td>' + esc(g.note || "") + '</td><td>' + day(g.created_at) + '</td>' +
+      '<td><button class="btn small" data-revoke="' + esc(g.email) + '" type="button">Cancel gift</button></td></tr>';
+  }).join("") || '<tr><td colspan="5">None.</td></tr>';
+}
+$("#memberSearch").addEventListener("input", renderMembers);
+$("#giftForm").addEventListener("submit", function(e){
+  e.preventDefault();
+  var email = $("#giftEmail").value.trim().toLowerCase(), months = $("#giftMonths").value, note = $("#giftNote").value.trim();
+  var notify = $("#giftNotify").checked;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setMsg($("#giftMsg"), "Enter a valid email address.", "bad");
+  setMsg($("#giftMsg"), notify ? "Saving and emailing…" : "Saving…");
+  var args = {target_email:email, months:months ? +months : null, grant_note:note || null};
+  var len = months ? (months === "12" ? "1 year of access" : months + (months === "1" ? " month" : " months") + " of access") : "lifetime access";
+  // With email: the gift-membership function records the gift and sends the email.
+  // If that function isn't set up yet, the gift is still saved directly.
+  var job = notify
+    ? sb.functions.invoke("gift-membership", {body:Object.assign({notify:true}, args)}).then(function(r){
+        if (r.error || !r.data || r.data.error) {
+          if (r.data && r.data.error) throw new Error(r.data.error);
+          return check(sb.rpc("grant_membership", args)).then(function(x){ return {result:x.data, emailed:false, emailError:"the email function didn't respond; check it's set up (SETUP.md)"}; });
+        }
+        return r.data;
+      })
+    : check(sb.rpc("grant_membership", args)).then(function(x){ return {result:x.data, emailed:false}; });
+  job.then(function(r){
+    var saved = r.result === "granted" ? "Done: " + email + " now has " + len + "." : "Saved: " + email + " gets " + len + " as soon as they sign up.";
+    var mail = !notify ? "" : r.emailed ? " We've emailed them." : " The email wasn't sent (" + (r.emailError || "unknown problem") + "), so let them know yourself.";
+    setMsg($("#giftMsg"), saved + mail, notify && !r.emailed ? "bad" : "ok");
+    $("#giftEmail").value = ""; $("#giftNote").value = "";
+    loadMembers();
+  }).catch(function(err){ setMsg($("#giftMsg"), "Couldn't gift access: " + err.message, "bad"); });
+});
+function revoke(email){
+  setMsg($("#giftMsg"), "Removing…");
+  check(sb.rpc("revoke_membership", {target_email:email})).then(function(r){
+    setMsg($("#giftMsg"), r.data === "revoked" ? "Removed the gift from " + email + "." : r.data === "no account for that email" ? "Cancelled any waiting gift for " + email + "." : String(r.data), "ok");
+    loadMembers();
+  }).catch(function(err){ setMsg($("#giftMsg"), "Couldn't remove: " + err.message, "bad"); });
+}
+$("#revokeBtn").addEventListener("click", function(){
+  var email = $("#giftEmail").value.trim().toLowerCase();
+  if (!email) return setMsg($("#giftMsg"), "Type the email in the box above first.", "bad");
+  revoke(email);
+});
+document.addEventListener("click", function(e){
+  var b = e.target.closest("[data-revoke]");
+  if (b && confirm("Remove the gift for " + b.dataset.revoke + "?")) revoke(b.dataset.revoke);
+});
+
+/* ---------- deck publishing ---------- */
+// Must match supabase/seed_deck_skips.sql: tidies spacing and punctuation so cosmetic edits don't count as new words.
+function normAr(s){
+  return String(s || "").replace(/ /g, " ").replace(/\\/g, "/").replace(/\s*[xX*×]\s*/g, " × ").replace(/ـ+/g, "ـ")
+    .replace(/\s+/g, " ").replace(/^[\s\-_.…]+|[\s\-_.…]+$/g, "").trim();
+}
+var TYPE_AR = {"فعل":"v", "اسم":"n", "اسماء":"n", "صفة":"a", "ظرف":"d", "حرف":"r", "تعبير":"p", "تبير":"p", "تركيب":"p", "سؤال":"p", "تعبير ديني":"p", "تعريف":"p"};
+var SURL_RE = /^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[\w-]+\/exec$/;
+var DRAFT_KEY = "arvocab-admin-drafts";
+var review = null; // {news:[], gone:[], back:[], cards:[]}
+function initDeck(){
+  check(sb.from("app_settings").select("value").eq("key", "sheet_deck_url").maybeSingle()).then(function(r){
+    $("#sheetUrl").value = (r.data && r.data.value) || lsGet("arvocab-sync-url") || "";
+  }).catch(function(){ $("#sheetUrl").value = lsGet("arvocab-sync-url") || ""; });
+}
+$("#checkSheet").addEventListener("click", function(){
+  var url = $("#sheetUrl").value.trim().split("?")[0].split("#")[0], msg = $("#deckMsg");
+  if (!SURL_RE.test(url)) return setMsg(msg, "That doesn't look like an Apps Script link. It starts with https://script.google.com/macros/s/ and ends with /exec.", "bad");
+  setMsg(msg, "Reading your sheet…");
+  check(sb.from("app_settings").upsert({key:"sheet_deck_url", value:url, updated_at:new Date().toISOString()})).catch(function(){});
+  Promise.all([
+    fetch(url + "?action=deck", {cache:"no-store"}).then(function(r){ return r.json(); }),
+    fetchAll("cards", "id,level,word_type,arabic,english,examples,sort_order,is_free,is_active", "sort_order"),
+    fetchAll("deck_skips", "arabic,note", "arabic")
+  ]).then(function(res){
+    var sheet = res[0];
+    if (!sheet || !sheet.ok || !sheet.rows) {
+      return setMsg(msg, sheet && sheet.error === "no-deck-tab" ? "The sheet has no tab called \"Arabic Vocab\"." : "The script answered, but not with the word list. Update the Apps Script to the latest google-sheet-sync.txt and deploy a new version (SETUP.md, step 7).", "bad");
+    }
+    buildReview(sheet, res[1], res[2]);
+    setMsg(msg, "");
+    renderReview();
+  }).catch(function(err){ setMsg(msg, "Couldn't read the sheet: " + err.message + ". Check the link and that you're online.", "bad"); });
+});
+function col(header, names, fallback){
+  var h = header.map(function(x){ return String(x).trim().toLowerCase(); });
+  for (var i = 0; i < names.length; i++) { var k = h.indexOf(names[i]); if (k > -1) return k; }
+  return fallback;
+}
+function buildReview(sheet, cards, skips){
+  var header = sheet.header || [];
+  var iType = col(header, ["type"], 1), iTerm = col(header, ["term", "word", "arabic"], 2), iSent = col(header, ["used in a sentence", "sentence", "example"], 3), iTr = col(header, ["translation", "english"], 4);
+  var first = sheet.firstRow || 2;
+  var byAr = new Map(), byId = new Map(cards.map(function(c){ return [c.id, c]; }));
+  cards.forEach(function(c){ byAr.set(normAr(c.arabic), c); });
+  var skipSet = new Set(skips.map(function(s){ return s.arabic; }));
+  var inSheet = new Set(), drafts = lsGet(DRAFT_KEY) || {};
+  var news = [], back = [];
+  sheet.rows.forEach(function(r){ var a = normAr(r[iTerm]); if (a) inSheet.add(a); });
+  sheet.rows.forEach(function(r, i){
+    var row = first + i, term = String(r[iTerm] || "").trim(), a = normAr(term);
+    if (!a) return;
+    var hit = byAr.get(a);
+    if (hit) { if (hit.is_active === false) back.push({card:hit, row:row}); return; }
+    if (skipSet.has(a)) return;
+    var tr = String(r[iTr] || "").trim(), sent = String(r[iSent] || "").trim();
+    var split = tr.indexOf(" / ") > -1 ? [tr.slice(0, tr.indexOf(" / ")).trim(), tr.slice(tr.indexOf(" / ") + 3).trim()] : ["", tr];
+    var d = drafts[a] || {};
+    var item = {row:row, ar:term, key:a,
+      en: d.en != null ? d.en : split[0],
+      lv: d.lv != null ? d.lv : "",
+      ty: d.ty != null ? d.ty : (TYPE_AR[String(r[iType] || "").trim()] || ""),
+      exAr: d.exAr != null ? d.exAr : sent,
+      exEn: d.exEn != null ? d.exEn : (sent ? split[1] : ""),
+      action: d.action || "add"};
+    // The card made from this same row has different Arabic now: probably an edit, not a new word.
+    var old = byId.get("r" + row);
+    if (old && old.is_active !== false && !inSheet.has(normAr(old.arabic))) item.replaces = old;
+    news.push(item);
+  });
+  // Cards whose word is no longer anywhere in the sheet (and isn't being replaced by an edit).
+  var replaced = new Set(news.filter(function(n){ return n.replaces; }).map(function(n){ return n.replaces.id; }));
+  var gone = cards.filter(function(c){ return c.is_active !== false && !inSheet.has(normAr(c.arabic)) && !replaced.has(c.id); });
+  news.forEach(function(n){ if (n.replaces && !(drafts[n.key] && drafts[n.key].action)) n.action = "replace"; });
+  review = {news:news, gone:gone, back:back, cards:cards};
+}
+function saveDrafts(){
+  var d = {};
+  review.news.forEach(function(n){ d[n.key] = {en:n.en, lv:n.lv, ty:n.ty, exAr:n.exAr, exEn:n.exEn, action:n.action}; });
+  lsSet(DRAFT_KEY, d);
+}
+function complete(n){ return n.action === "skip" || n.action === "replace" || (n.en.trim() && n.lv && n.ty); }
+function renderReview(){
+  var el = $("#deckReview"), r = review;
+  if (!r.news.length && !r.gone.length && !r.back.length) { el.innerHTML = '<p class="msg ok">The app already has every word in your sheet. Nothing to publish.</p>'; return; }
+  var html = "";
+  if (r.news.length) {
+    var missing = r.news.filter(function(n){ return !complete(n); }).length;
+    html += '<h2 style="margin-top:16px">' + r.news.length + ' word' + (r.news.length === 1 ? "" : "s") + ' from the sheet not in the app' + (missing ? ' (' + missing + ' still need details)' : "") + '</h2>';
+    r.news.forEach(function(n, i){
+      var miss = function(v){ return n.action === "add" && !v ? " missing" : ""; };
+      html += '<div class="word' + (n.action === "skip" ? " skip" : "") + '" data-i="' + i + '">' +
+        '<div class="word-head"><span class="ar" lang="ar">' + esc(n.ar) + '</span><small>Sheet row ' + n.row + '</small></div>' +
+        '<div class="choice">' +
+          (n.replaces ? '<label><input type="radio" name="act' + i + '" value="replace"' + (n.action === "replace" ? " checked" : "") + '> Edit of card ' + esc(n.replaces.id) + ' (<span class="ar" lang="ar">' + esc(n.replaces.arabic) + '</span>): update its Arabic</label>' : "") +
+          '<label><input type="radio" name="act' + i + '" value="add"' + (n.action === "add" ? " checked" : "") + '> Add as a new word</label>' +
+          '<label><input type="radio" name="act' + i + '" value="skip"' + (n.action === "skip" ? " checked" : "") + '> Skip (duplicate or note)</label></div>';
+      if (n.action === "add") {
+        html += '<div class="word-grid">' +
+          '<label>English meaning<input type="text" data-f="en" value="' + esc(n.en) + '" class="' + miss(n.en.trim()) + '" placeholder="e.g. to visit"></label>' +
+          '<label>Level<select data-f="lv" class="' + miss(n.lv) + '"><option value="">Choose…</option>' + [1,2,3,4,5,6].map(function(l){ return '<option value="' + l + '"' + (String(n.lv) === String(l) ? " selected" : "") + '>' + LV[l] + (l <= 2 ? " (free)" : "") + '</option>'; }).join("") + '</select></label>' +
+          '<label>Type<select data-f="ty" class="' + miss(n.ty) + '"><option value="">Choose…</option>' + Object.keys(TY).map(function(t){ return '<option value="' + t + '"' + (n.ty === t ? " selected" : "") + '>' + TY[t] + '</option>'; }).join("") + '</select></label></div>' +
+          '<div class="word-ex"><label>Example (Arabic)<input type="text" class="ar-in" dir="rtl" lang="ar" data-f="exAr" value="' + esc(n.exAr) + '"></label>' +
+          '<label>Example (English)<input type="text" data-f="exEn" value="' + esc(n.exEn) + '"></label></div>';
+      }
+      html += '</div>';
+    });
+  }
+  if (r.back.length) {
+    html += '<h2 style="margin-top:16px">Retired words that are back in the sheet</h2><p class="msg">These will be switched back on when you publish.</p>' +
+      r.back.map(function(b){ return '<div class="word"><div class="word-head"><span class="ar" lang="ar">' + esc(b.card.arabic) + '</span><small>' + esc(b.card.english) + ', row ' + b.row + '</small></div></div>'; }).join("");
+  }
+  if (r.gone.length) {
+    html += '<h2 style="margin-top:16px">In the app but no longer in your sheet</h2><p class="msg">Tick any you want to retire. Retired words disappear for new study, but members keep their history.</p>' +
+      r.gone.map(function(c){ return '<div class="word"><label class="choice"><input type="checkbox" data-retire="' + esc(c.id) + '"' + (c._retire ? " checked" : "") + '> <span class="ar" lang="ar">' + esc(c.arabic) + '</span> <small>' + esc(c.english) + ' · ' + LV[c.level] + ' · card ' + esc(c.id) + '</small></label></div>'; }).join("");
+  }
+  var ready = r.news.every(complete);
+  html += '<div class="row-actions"><button class="btn primary" id="publishBtn" type="button"' + (ready ? "" : " disabled") + '>Publish</button>' +
+    (ready ? "" : '<span class="msg">Fill in the highlighted boxes, or choose Skip, to publish.</span>') + '</div><p class="msg" id="publishMsg" aria-live="polite"></p>';
+  el.innerHTML = html;
+}
+$("#deckReview").addEventListener("input", function(e){
+  var w = e.target.closest(".word[data-i]");
+  if (w && e.target.dataset.f) {
+    var n = review.news[+w.dataset.i]; n[e.target.dataset.f] = e.target.value; saveDrafts();
+    if (e.target.tagName === "SELECT") renderReview();
+    else { e.target.classList.toggle("missing", n.action === "add" && !e.target.value.trim() && e.target.dataset.f === "en"); var btn = $("#publishBtn"); if (btn) btn.disabled = !review.news.every(complete); }
+  }
+});
+$("#deckReview").addEventListener("change", function(e){
+  var w = e.target.closest(".word[data-i]");
+  if (w && e.target.type === "radio") { review.news[+w.dataset.i].action = e.target.value; saveDrafts(); renderReview(); }
+  if (e.target.dataset.retire) { var c = review.gone.filter(function(x){ return x.id === e.target.dataset.retire; })[0]; if (c) c._retire = e.target.checked; }
+});
+$("#deckReview").addEventListener("click", function(e){ if (e.target.id === "publishBtn") publish(); });
+function publish(){
+  var r = review, msg = $("#publishMsg"), btn = $("#publishBtn");
+  btn.disabled = true; setMsg(msg, "Publishing…");
+  var ids = new Set(r.cards.map(function(c){ return c.id; }));
+  var maxSort = r.cards.reduce(function(m, c){ return Math.max(m, c.sort_order); }, 0);
+  var now = new Date().toISOString();
+  var adds = [], updates = [], skips = [];
+  r.news.forEach(function(n){
+    if (n.action === "skip") skips.push({arabic:n.key, note:"row " + n.row + ": skipped on " + now.slice(0, 10)});
+    else if (n.action === "replace") updates.push({id:n.replaces.id, arabic:n.ar, updated_at:now});
+    else {
+      var id = "r" + n.row, k = 1;
+      while (ids.has(id)) id = "r" + n.row + "-" + (++k);
+      ids.add(id);
+      maxSort += 10;
+      adds.push({id:id, level:+n.lv, word_type:n.ty, arabic:n.ar, english:n.en.trim(), examples:n.exAr.trim() ? [[n.exAr.trim(), n.exEn.trim()]] : [],
+        sort_order:maxSort, is_free:+n.lv <= 2, is_active:true, updated_at:now});
+    }
+  });
+  var retire = r.gone.filter(function(c){ return c._retire; }).map(function(c){ return c.id; });
+  var revive = r.back.map(function(b){ return b.card.id; });
+  var jobs = [];
+  if (adds.length) jobs.push(check(sb.from("cards").insert(adds)));
+  updates.forEach(function(u){ jobs.push(check(sb.from("cards").update({arabic:u.arabic, updated_at:u.updated_at}).eq("id", u.id))); });
+  if (skips.length) jobs.push(check(sb.from("deck_skips").upsert(skips, {onConflict:"arabic"})));
+  if (retire.length) jobs.push(check(sb.from("cards").update({is_active:false, updated_at:now}).in("id", retire)));
+  if (revive.length) jobs.push(check(sb.from("cards").update({is_active:true, updated_at:now}).in("id", revive)));
+  Promise.all(jobs).then(function(){
+    lsSet(DRAFT_KEY, {});
+    var parts = [];
+    if (adds.length) parts.push(adds.length + " new word" + (adds.length === 1 ? "" : "s") + " added");
+    if (updates.length) parts.push(updates.length + " updated");
+    if (skips.length) parts.push(skips.length + " skipped");
+    if (retire.length) parts.push(retire.length + " retired");
+    if (revive.length) parts.push(revive.length + " switched back on");
+    $("#deckReview").innerHTML = '<p class="msg ok">Published: ' + esc(parts.join(", ") || "nothing changed") + '. Members see the changes next time they open the app.</p>';
+  }).catch(function(err){ setMsg(msg, "Publishing failed: " + err.message + ". Nothing you typed is lost; try again.", "bad"); btn.disabled = false; });
+}
+
+/* ---------- backup ---------- */
+function initBackup(){
+  var last = lsGet("arvocab-admin-last-backup");
+  var el = $("#backupLast");
+  if (!last) setMsg(el, "No backup downloaded on this device yet.", "bad");
+  else {
+    var days = Math.floor((Date.now() - last) / 86400000);
+    setMsg(el, "Last downloaded " + (days === 0 ? "today" : days === 1 ? "yesterday" : days + " days ago") + ".", days >= 7 ? "bad" : "ok");
+  }
+}
+$("#backupBtn").addEventListener("click", function(){
+  var b = this; b.disabled = true; setMsg($("#backupLast"), "Preparing…");
+  check(sb.rpc("admin_export")).then(function(r){
+    var blob = new Blob([JSON.stringify(r.data)], {type:"application/json"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "arabic-vocab-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000);
+    lsSet("arvocab-admin-last-backup", Date.now());
+    initBackup();
+  }).catch(function(err){ setMsg($("#backupLast"), "Backup failed: " + err.message, "bad"); }).then(function(){ b.disabled = false; });
+});
+})();
+</script>
+</body>
+</html>

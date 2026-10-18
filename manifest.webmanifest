@@ -1,0 +1,37 @@
+{
+  "id": "./",
+  "name": "Breathe Arabic",
+  "short_name": "Breathe Arabic",
+  "description": "Flashcards, quizzes and a word list for learning Arabic vocabulary, sorted by CEFR level.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#10151F",
+  "theme_color": "#10151F",
+  "categories": [
+    "education"
+  ],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
