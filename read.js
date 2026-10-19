@@ -446,7 +446,7 @@ function lookup(text, sentence, range){
 function translate(){
   var c = cur; c.state = "loading"; renderPop();
   if (!navigator.onLine) { c.state = "offline"; renderPop(); return; }
-  sb.functions.invoke("translate", {body:{text:c.text}}).then(function(r){
+  sb.functions.invoke("translate", {body:{text:c.text, sentence:c.sentence || ""}}).then(function(r){
     if (c !== cur) return;
     var d = r.data;
     if (r.error && r.error.context && typeof r.error.context.json === "function") {
@@ -458,8 +458,12 @@ function translate(){
 function handleTranslate(c, d, status){
   if (c !== cur) return;
   if (d && d.error === "limit") { c.state = "limit"; allowance = 0; updateAllowance(); renderPop(); return; }
-  if (!d || !d.translation) { c.state = "error"; renderPop(); return; }
-  c.translation = d.translation; c.state = "translated";
+  if (!d || (!d.translation && !d.sentence_translation)) { c.state = "error"; renderPop(); return; }
+  // "ai": Google only spelled the word out, so this is Gemini's meaning in the sentence.
+  // "sentence": no meaning for the word alone, so this is the whole sentence; the learner types the word's meaning to save it.
+  c.source = d.source || "google"; c.sentenceTr = d.sentence_translation || null;
+  c.translation = d.translation || ""; c.state = "translated";
+  if (!c.translation) { c.editing = true; c.edited = ""; }
   if (!d.member && typeof d.remaining === "number") { allowance = d.remaining; updateAllowance(); }
   renderPop();
 }
@@ -480,11 +484,14 @@ function renderPop(){
   else if (c.state === "limit") html += '<p class="meaning">That\'s today\'s ' + FREE_LOOKUPS + ' free lookups</p><p class="sub">Members get unlimited lookups and the whole library. Words already in your flashcards still work.</p>' +
     '<div class="row"><button class="btn primary" data-act="subscribe" type="button">Subscribe' + (CFG.priceLabel ? " · " + esc(CFG.priceLabel) : "") + '</button></div>';
   else if (c.state === "translated" || c.state === "saving" || c.state === "saved" || c.state === "save-error") {
-    html += '<p class="meaning">' + esc(c.translation) + '</p><p class="sub">Machine translation' + (c.text.indexOf(" ") > -1 ? " of the phrase" : "") + '</p>';
+    if (c.translation) html += '<p class="meaning">' + esc(c.translation) + '</p><p class="sub">' +
+      (c.source === "ai" ? "AI meaning in this sentence" : "Machine translation" + (c.text.indexOf(" ") > -1 ? " of the phrase" : "")) + '</p>';
+    else html += '<p class="sub">This word has no clear translation on its own. The whole sentence means:</p><p class="meaning" style="font-size:1rem">' + esc(c.sentenceTr) + '</p>';
     if (c.state === "saved") html += '<p class="sub" style="color:var(--known);font-weight:600">' + esc(c.savedMsg) + '</p>';
     else if (c.state === "save-error") html += '<p class="sub" style="color:var(--wrong)">' + esc(c.saveMsg) + '</p>';
     if (c.state !== "saved") {
-      html += (c.editing ? '<input class="edit" id="editMeaning" value="' + esc(c.edited != null ? c.edited : c.translation) + '" aria-label="Meaning to save">' : "") +
+      html += (c.editing ? '<input class="edit" id="editMeaning" value="' + esc(c.edited != null ? c.edited : c.translation) + '" aria-label="Meaning to save"' +
+        (c.translation ? "" : ' placeholder="Its meaning (or leave empty and AI will add one)"') + '>' : "") +
         '<div class="row"><button class="btn primary" data-act="save" type="button"' + (c.state === "saving" ? " disabled" : "") + '>' + (c.state === "saving" ? "Saving…" : "Add to my flashcards") + '</button>' +
         (c.editing ? "" : '<button class="link" data-act="edit" type="button">Edit meaning</button>') + '</div>';
     }
@@ -528,9 +535,10 @@ document.addEventListener("pointercancel", function(){ outside = null; });
 function save(){
   var c = cur;
   var english = (c.edited != null ? c.edited : c.translation || "").trim();
-  if (!english) { c.state = "save-error"; c.saveMsg = "Add a meaning first."; renderPop(); return; }
+  // With no meaning for the word alone, an empty box lets the server's AI work the meaning out from the sentence.
+  if (!english && c.translation) { c.state = "save-error"; c.saveMsg = "Add a meaning first."; renderPop(); return; }
   c.state = "saving"; renderPop();
-  sb.functions.invoke("save-word", {body:{arabic:c.text, english:english, english_edited:c.edited != null && c.edited.trim() !== c.translation, sentence:c.sentence}}).then(function(r){
+  sb.functions.invoke("save-word", {body:{arabic:c.text, english:english, english_edited:!!english && c.edited != null && c.edited.trim() !== c.translation, sentence:c.sentence}}).then(function(r){
     if (r.error && r.error.context && typeof r.error.context.json === "function") return r.error.context.json().then(function(b){ return {data:b}; }, function(){ return {data:null}; });
     return r;
   }).then(function(r){
