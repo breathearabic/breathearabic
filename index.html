@@ -264,6 +264,24 @@ footer p{margin:0;max-width:62ch}
 .grade.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .grade.two .gbtn{padding:13px 8px 11px;font-size:1.02rem}
 .card .mem{text-align:center;margin-top:14px;font-size:.85rem}
+/* memory bar on the answer side; the thin mark is where a word counts as known */
+.membar{margin-top:16px;text-align:left}
+.membar-top{display:flex;justify-content:space-between;font-size:.82rem;color:var(--muted)}
+.membar-track{position:relative;height:8px;border-radius:4px;background:var(--step);margin-top:6px}
+.membar-track i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:linear-gradient(90deg,var(--learning),var(--known))}
+.membar-track b{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;border-radius:1px;background:var(--muted);opacity:.55}
+/* "now known" message, shown over the next card */
+.known-pop{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:20;display:flex;flex-direction:column;align-items:center;gap:2px;
+  background:var(--known);color:var(--surface);padding:12px 22px 11px;border-radius:18px;white-space:nowrap;box-shadow:0 10px 32px rgba(0,0,0,.28);font-weight:600;text-align:center;pointer-events:none;opacity:0;animation:knownPop 2.5s ease-out forwards}
+.known-pop .kp-tick{font-size:1.5rem;line-height:1}
+.known-pop b{font-family:var(--ar);font-size:1.35rem;font-weight:700}
+.known-pop small{font-size:.82rem;font-weight:500;opacity:.85}
+@keyframes knownPop{0%{opacity:0;transform:translate(-50%,-40%) scale(.92)}12%{opacity:1;transform:translate(-50%,-50%) scale(1)}78%{opacity:1;transform:translate(-50%,-58%)}100%{opacity:0;transform:translate(-50%,-66%)}}
+@media (prefers-reduced-motion: no-preference){
+  .card.flip{animation:cardFlip .38s cubic-bezier(.2,.7,.2,1);backface-visibility:hidden}
+  @keyframes cardFlip{from{transform:perspective(1400px) rotateY(-70deg);opacity:.35}to{transform:perspective(1400px) rotateY(0);opacity:1}}
+}
+@media (prefers-reduced-motion: reduce){ .known-pop{animation:knownFade 2.5s linear forwards} @keyframes knownFade{0%,85%{opacity:1}100%{opacity:0}} }
 .gbtn.again{color:var(--wrong);border-color:var(--wrong)}
 .gbtn.hard{color:var(--learning);border-color:var(--learning)}
 .gbtn.good{background:var(--known);border-color:var(--known);color:var(--surface)}

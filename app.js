@@ -452,6 +452,34 @@ function whenLabel(ms, now){
   return "on " + new Date(ms).toLocaleDateString([], {day:"numeric", month:"short", year: d > 300 ? "numeric" : undefined});
 }
 function memDays(st){ var v = st < 10 ? Math.round(st * 10) / 10 : Math.round(st); return v + (v === 1 ? " day" : " days"); }
+// Rounded for display: "4 days", "3 weeks", "2 months".
+function spanLabel(days){
+  if (days < 1) return "under a day";
+  if (days < 14) { var d = Math.round(days); return d + (d === 1 ? " day" : " days"); }
+  if (days < 60) return Math.round(days / 7) + " weeks";
+  if (days < 365) return Math.round(days / 30) + " months";
+  var y = Math.round(days / 365 * 10) / 10; return y + (y === 1 ? " year" : " years");
+}
+// Memory strength as a bar: a log scale from 1 day to 4 months, with a mark where a word counts as known.
+function memFrac(days){ return Math.max(0.03, Math.min(1, Math.log(Math.max(1, days)) / Math.log(120))); }
+function memBarHtml(s){
+  return '<div class="membar"><div class="membar-top"><span>Memory</span><span>' + spanLabel(s.s) + '</span></div>' +
+    '<div class="membar-track" role="img" aria-label="Memory lasts about ' + memDays(s.s) + '; a word is known at ' + KNOWN_DAYS + ' days">' +
+    '<i style="width:' + (memFrac(s.s) * 100).toFixed(1) + '%"></i><b style="left:' + (memFrac(KNOWN_DAYS) * 100).toFixed(1) + '%"></b></div></div>';
+}
+// The moment a word first counts as known: a short message over the next card, since the card itself moves on.
+function celebrateKnown(card, s, now){
+  var el = document.createElement("div");
+  el.className = "known-pop"; el.setAttribute("role", "status");
+  // Same interval the "I remember" button showed ("1.5mo" → "1.5 months").
+  var when = ivlLabel(s, now).replace(/^(\d+(?:\.\d+)?)(mo|d|y|h|m)$/, function(_, n, u){
+    var name = {mo:"month", d:"day", y:"year", h:"hour", m:"minute"}[u]; return n + " " + name + (n === "1" ? "" : "s");
+  });
+  el.innerHTML = '<span class="kp-tick" aria-hidden="true">✓</span><span><b lang="ar">' + esc(card.ar) + '</b> is now known</span><small>Next review in ' + when + '</small>';
+  document.body.appendChild(el);
+  if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {}
+  setTimeout(function(){ el.remove(); }, 2600);
+}
 function memoryLine(id, now){
   var s = state(id);
   if (!s) return "Not studied yet.";
@@ -609,7 +637,8 @@ function renderCard(){
   }
   var c = byId.get(fc.cur), s = state(c.id), arFirst = prefs.dir === "ar";
   var html2 = '<div class="meta">' + countsHtml + '<span class="meta-right">' + undoHtml + '</span></div>';
-  html2 += '<div class="card" id="card" tabindex="0" role="button" aria-label="' + (fc.revealed ? "Card" : "Show answer") + '">';
+  html2 += '<div class="card' + (fc.flip ? " flip" : "") + '" id="card" tabindex="0" role="button" aria-label="' + (fc.revealed ? "Card" : "Show answer") + '">';
+  fc.flip = false;
   html2 += '<div class="card-top"><span class="pill">' + LV[c.lv] + '</span><span class="tytag">' + TY[c.ty] + '</span>' + stageTag(c.id) + '<button class="listen" data-act="speak" type="button" aria-label="Listen to the Arabic">Listen</button></div>';
   html2 += arFirst
     ? '<div class="prompt is-ar' + arSizeClass(c.ar) + '" lang="ar">' + esc(c.ar) + '</div>'
@@ -618,7 +647,7 @@ function renderCard(){
     html2 += '<div class="answer" aria-live="polite">' + (arFirst
       ? '<div class="answer-main is-en">' + esc(c.en) + '</div>'
       : '<div class="answer-main is-ar" lang="ar">' + esc(c.ar) + '</div>') + exHtml(c) +
-      (s ? '<p class="mem">Memory currently lasts about ' + memDays(s.s) + ' before recall drops to 90%.</p>' : '<p class="mem">First time seeing this word.</p>') + '</div>';
+      (s ? memBarHtml(s) : '<p class="mem">First time seeing this word.</p>') + '</div>';
   } else {
     html2 += '<div class="tap">Try to recall it, then tap to check</div>';
   }
@@ -637,10 +666,10 @@ function renderCard(){
   }
   el.innerHTML = html2;
 }
-function reveal(){ if (!fc.cur || fc.revealed) return; fc.revealed = true; renderCard(); }
+function reveal(){ if (!fc.cur || fc.revealed) return; fc.revealed = true; fc.flip = true; renderCard(); }
 function rate(g){
   if (!fc.cur || !fc.revealed) return;
-  var id = fc.cur, now = Date.now();
+  var id = fc.cur, now = Date.now(), wasKnown = isKnown(state(id));
   fc.undo = {id:id, prev:state(id), extra:prefs.extra ? Object.assign({}, prefs.extra) : null, logs:outbox.logs.length};
   prog.p[id] = sched.review(state(id), g, now);
   queueLog(id, g, now);
@@ -648,6 +677,7 @@ function rate(g){
   fc.cur = null; fc.revealed = false;
   saveProgress([id]);
   renderCard();
+  if (!wasKnown && isKnown(prog.p[id])) celebrateKnown(byId.get(id), prog.p[id], now);
 }
 function undo(){
   if (!fc.undo) return;
