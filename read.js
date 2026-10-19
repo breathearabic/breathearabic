@@ -56,17 +56,50 @@ function candidates(k){
   stems.forEach(function(s){ add(s); add("ال" + s); if (s.indexOf("ال") === 0) add(s.slice(2)); add(s + "ه"); });
   return out;
 }
+/* Some deck cards hold several words: opposites ("التالي × السابق" = "next × previous"), pairs of different
+   words ("الشعر - الخطابة" = "poetry, oratory"), or forms of one word ("قطار ج قطارات" = "train (pl. trains)").
+   Each word is matched on its own. When the English splits into the same number of parts, the popup shows
+   only that word's part ("next"); otherwise the card's full meaning, which covers all its forms. */
+var AR_MAIN_SPLIT = /\s*(?:[\/،,×=]|\s-\s?|-\s|–|-)\s*|\sج\s|\sم\s|\sالمفرد\s|\sالجمع\s/;
+function splitTop(s, seps){
+  var out = [], buf = "", depth = 0;
+  for (var i = 0; i < s.length; i++) {
+    var ch = s[i];
+    if (ch === "(" || ch === "[") depth++;
+    else if ((ch === ")" || ch === "]") && depth) depth--;
+    if (!depth && seps.indexOf(ch) > -1) { out.push(buf); buf = ""; } else buf += ch;
+  }
+  out.push(buf);
+  return out.map(function(x){ return x.trim(); }).filter(Boolean);
+}
+function englishParts(c){
+  var seps = c.ar.indexOf("×") > -1 ? "×" : c.ar.indexOf("/") > -1 ? "/" : ",;";
+  return splitTop(String(c.en), seps);
+}
 function indexCards(){
   byKey = new Map();
+  function add(key, entry){
+    if (!key) return;
+    var l = byKey.get(key) || [];
+    if (!l.some(function(e){ return e.card === entry.card; })) l.push(entry);
+    byKey.set(key, l);
+  }
   cards.forEach(function(c){
-    var full = normKey(c.ar);
-    var parts = [full].concat(String(c.ar).split(/[\/،,\-–×()\[\]=]|\sج\s|\sم\s|\sالمفرد\s|\sالجمع\s/).map(normKey));
-    parts.forEach(function(p){ if (!p) return; var l = byKey.get(p) || []; if (l.indexOf(c) < 0) l.push(c); byKey.set(p, l); });
+    add(normKey(c.ar), {card:c, en:c.en, full:true});
+    // Words outside brackets, which can line up with the English parts.
+    var main = String(c.ar).replace(/\([^)]*\)|\[[^\]]*\]/g, " ").split(AR_MAIN_SPLIT).map(normKey).filter(Boolean);
+    var en = englishParts(c), aligned = main.length > 1 && en.length === main.length;
+    if (main.length > 1) main.forEach(function(p, i){ add(p, {card:c, en:aligned ? en[i] : c.en, full:false, aligned:aligned}); });
+    // A word with a bracketed note ("العَذْب (ماء)") matches without the note. The note itself doesn't
+    // match this card: tapping ماء shouldn't show "fresh, sweet (water)".
+    else if (main.length === 1 && main[0] !== normKey(c.ar)) add(main[0], {card:c, en:c.en, full:true});
   });
 }
 function bestOf(list){
-  // Prefer the learner's saved word, then a card they've studied, then deck order.
-  return list.slice().sort(function(a, b){ return (b.mine - a.mine) || ((prog[b.id] ? 1 : 0) - (prog[a.id] ? 1 : 0)) || (a.so - b.so); })[0];
+  // Prefer an exact whole-card match, then the learner's saved word, then a studied card, then deck order.
+  return list.slice().sort(function(a, b){
+    return (b.full - a.full) || (b.card.mine - a.card.mine) || ((prog[b.card.id] ? 1 : 0) - (prog[a.card.id] ? 1 : 0)) || (a.card.so - b.card.so);
+  })[0];
 }
 function match(text){
   var k = normKey(text);
@@ -223,8 +256,8 @@ function renderText(t){
     html += "<p>";
     (par.match(WORD_RE) || []).forEach(function(tok){
       if (IS_WORD.test(tok)) {
-        var c = match(tok);
-        html += '<span class="w ' + cls(c) + '" data-i="' + (wi++) + '" data-s="' + si + '">' + esc(tok) + '</span>';
+        var hit = match(tok);
+        html += '<span class="w ' + cls(hit && hit.card) + '" data-i="' + (wi++) + '" data-s="' + si + '">' + esc(tok) + '</span>';
         sentences[si] += tok;
       } else {
         html += esc(tok);
@@ -242,7 +275,7 @@ function renderText(t){
 }
 function refreshUnderlines(){
   document.querySelectorAll("#text .w").forEach(function(el){
-    el.className = "w " + cls(match(el.textContent)) + (el.classList.contains("sel") ? " sel" : "");
+    var hit = match(el.textContent); el.className = "w " + cls(hit && hit.card) + (el.classList.contains("sel") ? " sel" : "");
   });
 }
 function sentenceOf(el){ var s = el && el.closest(".w") ? +el.closest(".w").dataset.s : -1; return s > -1 ? sentences[s].replace(/\s+/g, " ").trim() : ""; }
@@ -337,10 +370,11 @@ function placePop(){
 window.addEventListener("resize", placePop);
 function lookup(text, sentence, range){
   text = String(text).trim(); if (!text) return;
-  var card = match(text);
-  cur = {text:text, sentence:sentence, card:card, translation:null, state:card ? "known" : "loading", range:range || null};
+  var hit = match(text);
+  cur = {text:text, sentence:sentence, card:hit ? hit.card : null, meaning:hit ? hit.en : null, partOf:!!hit && !hit.full,
+    translation:null, state:hit ? "known" : "loading", range:range || null};
   renderPop();
-  if (!card) translate();
+  if (!hit) translate();
 }
 function translate(){
   var c = cur; c.state = "loading"; renderPop();
@@ -368,8 +402,10 @@ function renderPop(){
   var html = '<div class="head"><div class="ar" lang="ar" dir="rtl">' + esc(c.text) + '</div><button class="x" data-act="close" type="button" aria-label="Close">×</button></div>';
   if (c.state === "known") {
     var k = c.card;
-    html += '<p class="meaning">' + esc(k.en) + '</p><p class="sub">' + (k.mine ? "In your saved words" : "In your flashcards") + ' · ' + LV[k.lv] + ' ' + TY[k.ty] + ' · ' + stage(k) +
-      (normKey(k.ar) !== normKey(c.text) ? ' · listed as <span lang="ar" style="font-family:var(--ar)">' + esc(k.ar) + '</span>' : "") + '</p>' +
+    // A word that's one part of a combined card ("التالي × السابق") is labelled "from the card …".
+    var where = c.partOf ? " · from the card " : normKey(k.ar) !== normKey(c.text) ? " · listed as " : "";
+    html += '<p class="meaning">' + esc(c.meaning || k.en) + '</p><p class="sub">' + (k.mine ? "In your saved words" : "In your flashcards") + ' · ' + LV[k.lv] + ' ' + TY[k.ty] + ' · ' + stage(k) +
+      (where ? where + '<span lang="ar" style="font-family:var(--ar)">' + esc(k.ar) + '</span>' + (c.partOf && c.meaning !== k.en ? ' (' + esc(k.en) + ')' : "") : "") + '</p>' +
       '<div class="row"><button class="link" data-act="translate" type="button">Translate this exact form</button></div>';
   } else if (c.state === "loading") html += '<p class="sub">Looking it up…</p>';
   else if (c.state === "offline") html += '<p class="sub">You\'re offline. Words already in your flashcards still show their meaning; new words need a connection.</p>';
@@ -436,13 +472,9 @@ function save(){
 }
 
 /* ---------- small helpers shared with the flashcards ---------- */
-var arVoice = null;
-function pickVoice(){ if (!("speechSynthesis" in window)) return; arVoice = window.speechSynthesis.getVoices().filter(function(x){ return /^ar/i.test(x.lang); })[0] || null; }
-pickVoice(); if ("speechSynthesis" in window) window.speechSynthesis.onvoiceschanged = pickVoice;
-function speak(text){
-  if (!arVoice) { toast("Your device has no Arabic voice installed."); return; }
-  try { window.speechSynthesis.cancel(); var u = new SpeechSynthesisUtterance(text); u.voice = arVoice; u.lang = arVoice.lang; u.rate = 0.85; window.speechSynthesis.speak(u); } catch (e) {}
-}
+// Natural Arabic audio (see speech.js), with the device's own voice as a fallback.
+var speaker = window.makeSpeaker({client:function(){ return sb; }, enabled:CFG.tts !== false, onError:function(m){ toast(m); }});
+function speak(text){ speaker.speak(text); }
 function subscribe(btn){
   if (!CFG.paymentsEnabled) { toast("Subscriptions are opening soon."); return; }
   if (btn) btn.disabled = true;

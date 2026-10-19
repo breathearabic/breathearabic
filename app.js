@@ -364,24 +364,10 @@ function onFilterChange(){
 }
 
 /* ---------- speech ---------- */
-var arVoice = null;
-function pickVoice(){
-  if (!("speechSynthesis" in window)) return;
-  var v = window.speechSynthesis.getVoices();
-  arVoice = v.filter(function(x){ return /^ar/i.test(x.lang); })[0] || null;
-  document.body.classList.toggle("can-speak", !!arVoice);
-}
-pickVoice();
-if ("speechSynthesis" in window) window.speechSynthesis.onvoiceschanged = pickVoice;
-function speak(text){
-  if (!arVoice) return;
-  try {
-    window.speechSynthesis.cancel();
-    var u = new SpeechSynthesisUtterance(text.replace(/[×\/\-–_]/g, "، "));
-    u.voice = arVoice; u.lang = arVoice.lang; u.rate = 0.85;
-    window.speechSynthesis.speak(u);
-  } catch (e) {}
-}
+// Natural Arabic audio (see speech.js), with the device's own voice as a fallback.
+var speaker = window.makeSpeaker({client:function(){ return sb; }, enabled:CFG.tts !== false && configured, onError:function(m){ toast(m); }});
+document.body.classList.toggle("can-speak", speaker.available());
+function speak(text){ speaker.speak(text); }
 
 /* ---------- formatting ---------- */
 function arSizeClass(s){ return s.length > 34 ? " xlong" : s.length > 18 ? " long" : ""; }

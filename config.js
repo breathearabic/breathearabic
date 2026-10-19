@@ -12,5 +12,8 @@ window.ARVOCAB_CONFIG = {
   // Shown next to Subscribe buttons, e.g. "£4.99 a month". Leave empty to show no price.
   priceLabel: "$5 a month",
   // Who can use the Read page: "admin" (only you, for testing), "everyone", or "off".
-  readerAccess: "admin"
+  readerAccess: "admin",
+  // Natural Arabic audio for the Listen buttons (the "speak" function, SETUP.md step 12d).
+  // false = use only the device's own voice.
+  tts: true
 };
