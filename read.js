@@ -446,6 +446,18 @@ pop.addEventListener("click", function(e){
 });
 pop.addEventListener("input", function(e){ if (e.target.id === "editMeaning" && cur) cur.edited = e.target.value; });
 document.addEventListener("keydown", function(e){ if (e.key === "Escape") closePop(); });
+// A tap or click anywhere outside the popup closes it. Swiping to scroll doesn't, and tapping another
+// word just moves the popup to that word.
+var outside = null;
+document.addEventListener("pointerdown", function(e){
+  outside = !pop.hidden && !pop.contains(e.target) && !e.target.closest("#text .w") ? {x:e.clientX, y:e.clientY, id:e.pointerId} : null;
+});
+document.addEventListener("pointerup", function(e){
+  var o = outside; outside = null;
+  if (!o || e.pointerId !== o.id || pop.hidden) return;
+  if (Math.abs(e.clientX - o.x) + Math.abs(e.clientY - o.y) < 10) closePop();
+});
+document.addEventListener("pointercancel", function(){ outside = null; });
 function save(){
   var c = cur;
   var english = (c.edited != null ? c.edited : c.translation || "").trim();
@@ -496,7 +508,11 @@ function route(){
   var m = /^#t=([\w-]+)$/.exec(location.hash);
   if (m) {
     main.innerHTML = '<div class="panel"><p>Loading the text…</p></div>';
-    getText(m[1]).then(renderText);
+    getText(m[1]).then(function(t){
+      // Remember it for "Continue reading" on the home screen.
+      if (t && m[1] !== "draft") lsSet(ukey("last-text"), {id:m[1], title:t.title});
+      renderText(t);
+    });
   } else renderHome();
 }
 window.addEventListener("hashchange", route);

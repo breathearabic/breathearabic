@@ -308,25 +308,160 @@ footer p{margin:0;max-width:62ch}
 .acct .save{margin-top:8px;font-size:.88rem}
 .acct .links{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;align-items:center}
 .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);max-width:calc(100% - 32px);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:12px;font-size:.92rem;box-shadow:0 6px 24px rgba(0,0,0,.18);z-index:10}
+/* ===== landing page ===== */
+.brand{display:block;flex:none;border-radius:16px}
+.muted{color:var(--muted)} .small{font-size:.85rem}
+.hero{display:grid;grid-template-columns:1.15fr 1fr;gap:28px;align-items:start;margin:8px 0 40px}
+.hero-text h2{font-size:clamp(1.7rem,4.2vw,2.4rem);line-height:1.15;margin:4px 0 14px;font-weight:600;letter-spacing:-.015em}
+.hero-text > p{color:var(--muted);font-size:1.05rem;margin:0 0 16px;max-width:46ch}
+.ticks{list-style:none;padding:0;margin:0 0 18px;display:grid;gap:8px}
+.ticks li{position:relative;padding-left:26px}
+.ticks li::before{content:"";position:absolute;left:2px;top:.42em;width:12px;height:7px;border-left:2px solid var(--known);border-bottom:2px solid var(--known);transform:rotate(-45deg)}
+.hero-cta{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.hero-cta .btn{text-decoration:none;padding:12px 22px}
+.hero .signin{margin:0;max-width:none;scroll-margin-top:20px}
+.features,.plans,.faq{margin:0 0 40px}
+.features h2,.plans h2,.faq h2{font-size:1.35rem;font-weight:600;margin:0 0 14px}
+.feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.feature{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 16px 18px}
+.feature h3{font-size:1.02rem;margin:8px 0 6px}
+.feature p{margin:0;color:var(--muted);font-size:.93rem}
+.fnum{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:9px;background:var(--lapis-soft);color:var(--lapis);font-weight:600;font-size:.9rem}
+.plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.plan{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column}
+.plan.featured{border-color:var(--lapis);box-shadow:0 0 0 1px var(--lapis) inset}
+.plan h3{margin:0;font-size:1.05rem}
+.plan .price{font-size:1.6rem;font-weight:600;margin:4px 0 12px}
+.plan .ticks{flex:1}
+.plan .btn{text-align:center;text-decoration:none;color:var(--ink)}
+.plan .btn.primary{color:var(--lapis-ink)}
+.faq details{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:8px}
+.faq summary{cursor:pointer;font-weight:600}
+.faq details p{margin:8px 0 0;color:var(--muted)}
+.land-foot{border-top:1px solid var(--line);padding-top:14px;margin-top:0;font-size:.88rem;color:var(--muted)}
+@media (max-width:720px){ .hero{grid-template-columns:1fr} .plan-grid{grid-template-columns:1fr} }
+
+/* ===== signed-in dashboard ===== */
+.greet{margin:-6px 0 16px;color:var(--muted);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.ar-greet{font-family:var(--ar);font-size:1.5rem;color:var(--ink)}
+.today,.streak,.progress{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px 18px 20px;margin-bottom:14px}
+.today-head,.streak-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.today h2,.streak h2,.progress h2{margin:0;font-size:1.15rem;font-weight:600}
+.today-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0 16px}
+.stat{background:var(--paper);border-radius:12px;padding:10px 12px}
+.stat b{display:block;font-size:1.7rem;line-height:1.15;font-variant-numeric:tabular-nums}
+.stat span{font-size:.82rem;color:var(--muted)}
+.stat.due b{color:var(--known)} .stat.new b{color:var(--lapis)} .stat.lrn b{color:var(--learning)}
+.today-cta{display:flex;gap:10px;flex-wrap:wrap}
+.today-cta .btn{text-decoration:none;flex:1;min-width:160px;text-align:center;padding:13px 16px}
+.today-cta .btn.primary{color:var(--lapis-ink)} .today-cta .btn:not(.primary){color:var(--ink)}
+.today .note{margin:0 0 14px;color:var(--muted)}
+#streakNum{font-variant-numeric:tabular-nums}
+.bars{display:flex;gap:3px;align-items:flex-end;height:56px;margin:14px 0 6px}
+.bars i{display:block;flex:1;border-radius:3px 3px 1px 1px;background:var(--known);min-height:3px}
+.bars i.zero{background:var(--step)}
+.bars i.now{background:var(--lapis)} .bars i.now.zero{background:color-mix(in srgb,var(--lapis) 35%,transparent)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:0 0 14px}
+.tile{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;text-decoration:none;color:var(--ink);transition:border-color .15s}
+.tile:hover{border-color:var(--lapis)}
+.tile b{display:block;font-weight:600}
+.tile small{display:block;color:var(--muted);font-size:.85rem}
+.tile-ico{flex:none;width:42px;height:42px;border-radius:12px;background:var(--lapis-soft);color:var(--lapis);display:grid;place-items:center;font-size:1.2rem;font-weight:700}
+.tile-ico.ar{font-family:var(--ar);font-size:1rem}
+.lvl{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;margin-top:10px;font-size:.9rem}
+.lvl b{font-weight:600}
+.lvl .track{height:8px;border-radius:99px;background:var(--step);overflow:hidden}
+.lvl .track i{display:block;height:100%;background:var(--known);border-radius:99px}
+.lvl .n{color:var(--muted);font-variant-numeric:tabular-nums;font-size:.85rem}
+.lvl.locked .n{color:var(--lapis);font-weight:600}
+.home-foot{margin:18px 0 0}
+.import-banner{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;background:var(--lapis-soft);border-radius:14px;padding:12px 14px;margin-bottom:14px}
+.import-banner .btn{text-decoration:none;color:var(--lapis-ink)}
+@media (max-width:520px){ .today-stats{gap:6px} .stat{padding:8px} .stat b{font-size:1.4rem} .bars{gap:2px} }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header class="top">
-    <img class="logo" src="icons/logo-mark-160.png" width="72" height="72" alt="Breathe Arabic logo: the Arabic word nafas, breath">
+    <a class="brand" href="./#" aria-label="Breathe Arabic home"><img class="logo" src="icons/logo-mark-160.png" width="72" height="72" alt=""></a>
     <div>
       <h1>Breathe Arabic</h1>
-      <p><span id="total"></span> Arabic words, sorted by CEFR level</p>
+      <p id="topSub"><span id="total"></span> Arabic words, sorted by CEFR level</p>
     </div>
-    <nav class="topnav" id="topnav" hidden><a class="pillnav" href="read">Read</a></nav>
+    <nav class="topnav" id="topnav" hidden>
+      <a class="pillnav" id="navHome" href="./#" hidden>Home</a>
+      <a class="pillnav" id="navRead" href="read" hidden>Read</a>
+    </nav>
   </header>
 
-  <section class="signin" id="signin" aria-labelledby="signinTitle" hidden>
-    <h2 id="signinTitle">Sign in to Breathe Arabic</h2>
-    <p>Spaced-repetition flashcards for Modern Standard Arabic. A free account opens A1 and A2; members get every level. Your progress syncs across your devices.</p>
-    <div id="signinBody"></div>
-    <p class="legal">By signing in you agree to the <a href="terms">terms</a>. See how your data is handled in the <a href="privacy">privacy policy</a>.</p>
-  </section>
+  <!-- ===== Landing page: people who aren't signed in ===== -->
+  <div id="landing" hidden>
+    <section class="hero">
+      <div class="hero-text">
+        <h2>Learn the words of Arabic, and keep them for life.</h2>
+        <p>Breathe Arabic is a vocabulary app for Muslims learning Modern Standard Arabic, the language of the Quran. Study for a few minutes a day, and every word comes back just before you'd forget it.</p>
+        <ul class="ticks">
+          <li>913 words from beginner (A1) to advanced (C2)</li>
+          <li>Natural Arabic audio for every word</li>
+          <li>On your phone and computer, even offline</li>
+        </ul>
+        <div class="hero-cta"><a class="btn primary" href="#start">Start free</a><a class="link" href="#how">How it works</a></div>
+      </div>
+      <section class="signin" id="signin" aria-labelledby="signinTitle">
+        <h2 id="signinTitle" tabindex="-1">Start free</h2>
+        <p>Create your account or sign in. No card needed: A1 and A2 are free for everyone.</p>
+        <div id="signinBody"></div>
+        <p class="legal">By signing in you agree to the <a href="terms">terms</a>. See how your data is handled in the <a href="privacy">privacy policy</a>.</p>
+      </section>
+    </section>
+
+    <section class="features" id="how" aria-labelledby="howTitle">
+      <h2 id="howTitle">How it works</h2>
+      <div class="feature-grid">
+        <div class="feature"><span class="fnum">1</span><h3>Flashcards that remember for you</h3><p>See a word, recall it, and tap "I remember" or "I don't remember". The same memory model as Anki schedules each word to return just before you'd forget it, so a few minutes a day goes a long way.</p></div>
+        <div class="feature"><span class="fnum">2</span><h3>Hear every word</h3><p>Natural Arabic pronunciation on every card, with real example sentences that show each word in use.</p></div>
+        <div class="feature" data-reader><span class="fnum">3</span><h3>Read real Arabic</h3><p>Open a text, tap any word for its meaning, and add new words to your flashcards in one tap.</p></div>
+        <div class="feature"><span class="fnum" data-num-after-reader>3</span><h3>Climb the levels</h3><p>Words are grouped by CEFR level, from everyday basics to the vocabulary of articles, sermons and books. Watch each step of the staircase fill up.</p></div>
+      </div>
+    </section>
+
+    <section class="plans" aria-labelledby="plansTitle">
+      <h2 id="plansTitle">Free to start</h2>
+      <div class="plan-grid">
+        <div class="plan">
+          <h3>Free</h3>
+          <p class="price" id="freePrice">£0</p>
+          <ul class="ticks">
+            <li>Every A1 and A2 word</li>
+            <li>Flashcards, quizzes and the word list</li>
+            <li>Progress saved across your devices</li>
+          </ul>
+          <a class="btn" href="#start">Start free</a>
+        </div>
+        <div class="plan featured">
+          <h3>Member</h3>
+          <p class="price" id="planPrice">Every level</p>
+          <ul class="ticks">
+            <li>Everything in Free</li>
+            <li>All levels, B1 to C2</li>
+            <li data-reader>The full reading library and unlimited word lookups</li>
+            <li>Cancel any time</li>
+          </ul>
+          <a class="btn primary" href="#start">Start free, upgrade any time</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="faq" aria-labelledby="faqTitle">
+      <h2 id="faqTitle">Questions</h2>
+      <details><summary>Do I need to read Arabic script?</summary><p>Yes: Breathe Arabic teaches vocabulary, so you'll want to know the alphabet first. Most words show their vowel marks, and every word has audio.</p></details>
+      <details><summary>What do A1 to C2 mean?</summary><p>They're the CEFR levels used for languages worldwide, from beginner (A1) to mastery (C2). Arabic has no official CEFR word list, so the levels here are careful estimates based on how common and how abstract each word is.</p></details>
+      <details><summary>Is this Fusha or a dialect?</summary><p>Modern Standard Arabic (Fusha): the formal Arabic of books, news and khutbahs, closely related to the Arabic of the Quran, and understood across the Arab world.</p></details>
+      <details><summary>Can I cancel my membership?</summary><p>Yes, any time, from your account. You keep access until the end of the period you've paid for, and your progress stays saved.</p></details>
+    </section>
+
+    <footer class="land-foot"><p><a href="privacy">Privacy</a> · <a href="terms">Terms</a> · <a href="mailto:support@breathearabic.com">support@breathearabic.com</a></p></footer>
+  </div>
 
   <div id="appMain" hidden>
   <div class="installbar" id="installBar" hidden>
@@ -337,6 +472,51 @@ footer p{margin:0;max-width:62ch}
     </div>
   </div>
 
+  <!-- ===== Dashboard: signed-in home ===== -->
+  <div id="home" hidden>
+    <p class="greet"><span lang="ar" dir="rtl" class="ar-greet">السلام عليكم</span> <span id="greetDate"></span></p>
+    <div id="homeImport"></div>
+    <section class="today" aria-labelledby="todayTitle">
+      <div class="today-head"><h2 id="todayTitle">Today</h2><span id="todayEta" class="muted"></span></div>
+      <div class="today-stats" id="todayStats"></div>
+      <div class="today-cta" id="todayCta"></div>
+    </section>
+
+    <section class="streak" aria-labelledby="streakTitle">
+      <div class="streak-head"><h2 id="streakTitle"><span id="streakNum">0</span> <span id="streakWord">day streak</span></h2><span id="weekCount" class="muted"></span></div>
+      <div class="bars" id="activityBars" role="img" aria-label="Reviews over the last 30 days"></div>
+      <p class="muted small" id="streakHint"></p>
+    </section>
+
+    <nav class="tiles" aria-label="Study">
+      <a class="tile" href="#study/cards"><span class="tile-ico" aria-hidden="true">▤</span><span><b>Flashcards</b><small>Review what's due, learn new words</small></span></a>
+      <a class="tile" href="#study/quiz"><span class="tile-ico" aria-hidden="true">✓</span><span><b>Quiz</b><small>Multiple choice on any level</small></span></a>
+      <a class="tile" href="#study/list"><span class="tile-ico" aria-hidden="true">≣</span><span><b>Word list</b><small>Search every word and its memory</small></span></a>
+      <a class="tile" href="read" id="tileRead" hidden><span class="tile-ico ar" aria-hidden="true">اقرأ</span><span><b>Read</b><small id="tileReadSub">Tap any word for its meaning</small></span></a>
+      <a class="tile" href="admin" id="tileAdmin" hidden><span class="tile-ico" aria-hidden="true">⚙</span><span><b>Admin</b><small>Members, gifts, deck and library</small></span></a>
+    </nav>
+
+    <section class="progress" aria-labelledby="progTitle">
+      <div class="today-head"><h2 id="progTitle">Your progress</h2><span id="learnedTotal" class="muted"></span></div>
+      <div id="levelBars"></div>
+    </section>
+
+    <section class="syncbox acct" aria-labelledby="acctTitle">
+      <h2 id="acctTitle">Your account</h2>
+      <p class="who" id="acctEmail"></p>
+      <p id="acctPlan"></p>
+      <p class="save" id="saveStatus" aria-live="polite"></p>
+      <div class="acct-btns" id="acctBtns"></div>
+      <div class="links">
+        <button class="link" id="signOutBtn" type="button">Sign out</button>
+        <button class="link" data-act="import-open" type="button">Import progress from the earlier app</button>
+      </div>
+    </section>
+    <p class="muted small home-foot"><a href="privacy">Privacy</a> · <a href="terms">Terms</a> · <a href="mailto:support@breathearabic.com">support@breathearabic.com</a></p>
+  </div>
+
+  <!-- ===== Study: flashcards, quiz, word list ===== -->
+  <div id="study" hidden>
   <section aria-label="Choose levels">
     <div class="stairs" id="stairs"></div>
     <div class="levels-meta"><span id="levelSummary" aria-live="polite"></span><button class="link" id="allBtn" type="button">Select all levels</button></div>
@@ -394,24 +574,13 @@ footer p{margin:0;max-width:62ch}
       <div id="list"></div>
     </section>
   </main>
-
   <footer>
-    <section class="syncbox acct" aria-labelledby="acctTitle">
-      <h2 id="acctTitle">Your account</h2>
-      <p class="who" id="acctEmail"></p>
-      <p id="acctPlan"></p>
-      <p class="save" id="saveStatus" aria-live="polite"></p>
-      <div class="acct-btns" id="acctBtns"></div>
-      <div class="links">
-        <button class="link" id="signOutBtn" type="button">Sign out</button>
-        <button class="link" data-act="import-open" type="button">Import progress from the earlier app</button>
-      </div>
-    </section>
     <p>Words come up in order of when they're due, oldest first, whatever their level. New words are added in deck order. Reviews are scheduled with FSRS, the memory model Anki uses, with two buttons like a pass/fail setup. Each time you remember a word, its memory gets stronger and the next review moves further out. Each time you forget it, the memory weakens and the word comes back within minutes. Every word returns when your chance of remembering it drops to about 90%. A new study day starts at 4am.</p>
     <p>CEFR has no official word list for Arabic, so the levels here are estimates for learners of Modern Standard Arabic, based on how common and how abstract each word is.</p>
     <p><a href="privacy">Privacy</a> · <a href="terms">Terms</a></p>
     <p><button class="link danger" id="resetBtn" type="button">Reset all my progress</button></p>
   </footer>
+  </div>
   </div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

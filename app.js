@@ -72,6 +72,23 @@ function queueCard(id){
   else { delete outbox.up[id]; outbox.del[id] = true; }
 }
 function queueLog(id, g, at){ outbox.logs.push({card_id:id, rating:g, reviewed_at:new Date(at).toISOString()}); }
+/* Answers per study day (day number -> count), for the streak and the 30-day chart on the home screen.
+   Made from the review log on the server, plus answers saved here that haven't been sent yet. */
+var activity = {};
+function addActivity(logs){ logs.forEach(function(l){ var d = dayNum(Date.parse(l.reviewed_at)); activity[d] = (activity[d] || 0) + 1; }); }
+function activityCounts(){
+  var c = Object.assign({}, activity);
+  outbox.logs.forEach(function(l){ var d = dayNum(Date.parse(l.reviewed_at)); c[d] = (c[d] || 0) + 1; });
+  return c;
+}
+function fetchActivity(){
+  var since = new Date(Date.now() - 40 * DAY).toISOString(), out = [];
+  function page(from){
+    return check(sb.from("review_log").select("reviewed_at").gte("reviewed_at", since).order("reviewed_at", {ascending:false}).range(from, from + PAGE - 1))
+      .then(function(r){ out = out.concat(r.data || []); return r.data && r.data.length === PAGE && from < 9 * PAGE ? page(from + PAGE) : out; });
+  }
+  return page(0).catch(function(){ return null; });
+}
 function saveProgress(ids){
   (ids || []).forEach(queueCard);
   outboxVer++;
@@ -106,6 +123,8 @@ function flush(){
     // Remove what was sent, unless it changed again while we were sending.
     delIds.forEach(function(id){ if (outbox.del[id]) delete outbox.del[id]; });
     Object.keys(snap.up).forEach(function(id){ if (JSON.stringify(outbox.up[id]) === JSON.stringify(snap.up[id])) delete outbox.up[id]; });
+    // Sent answers now count from the server's log, so keep them in the day counts.
+    addActivity(outbox.logs.slice(0, snap.logs.length)); lsSet(ukey("activity"), activity);
     outbox.logs.splice(0, snap.logs.length);
     // A reset made while this was sending sets a newer wipe stamp; keep that one.
     if (snap.wipe && outbox.wipe === snap.wipe) outbox.wipe = false;
@@ -151,9 +170,11 @@ function loadRemote(){
     fetchAll("progress", "card_id,state", "card_id"),
     check(sb.from("memberships").select("*").eq("user_id", uid).maybeSingle()),
     check(sb.from("profiles").select("id,email,display_name,role").eq("id", uid).maybeSingle()),
-    check(sb.rpc("deck_summary"))
+    check(sb.rpc("deck_summary")),
+    fetchActivity()
   ]).then(function(res){
     if (!user || user.id !== uid) return;
+    if (res[5]) { activity = {}; addActivity(res[5]); lsSet(ukey("activity"), activity); }
     setCards(res[0].map(toCard));
     var p = {};
     res[1].forEach(function(r){ if (byId.has(r.card_id) && validState(r.state)) p[r.card_id] = r.state; });
@@ -183,6 +204,7 @@ function loadCached(){
   member = lsGet(ukey("member"));
   profile = lsGet(ukey("profile"));
   summary = lsGet(ukey("summary")) || [];
+  activity = lsGet(ukey("activity")) || {};
   outbox = Object.assign({up:{}, del:{}, logs:[], wipe:false}, lsGet(ukey("outbox")) || {});
   var p = lsGet(ukey("prog")) || {};
   prog.p = {};
@@ -336,6 +358,8 @@ var tabs = document.querySelectorAll(".tab");
 for (var t = 0; t < tabs.length; t++) tabs[t].addEventListener("click", function(){ setMode(this.dataset.mode); });
 function setMode(m){
   prefs.mode = m; savePrefs();
+  // Keep the address in step (e.g. #study/quiz) so Back and bookmarks work.
+  if (view === "study" && location.hash !== "#study/" + m) history.replaceState(null, "", "#study/" + m);
   for (var i = 0; i < tabs.length; i++) tabs[i].setAttribute("aria-selected", tabs[i].dataset.mode === m ? "true" : "false");
   $("#panel-cards").hidden = m !== "cards";
   $("#panel-quiz").hidden = m !== "quiz";
@@ -430,7 +454,7 @@ function maybeOfferImport(){
   var local = legacyLocal(), url = lsGet(LEGACY_SYNC_KEY) || "";
   if (!local && !url) return;
   importState = {local:local, sheetUrl:url, msg:"", busy:false};
-  if (prefs.mode === "cards") renderCard();
+  if (view === "home") renderHome(); else if (prefs.mode === "cards") renderCard();
 }
 function openImport(){
   importState = {local:legacyLocal(), sheetUrl:lsGet(LEGACY_SYNC_KEY) || "", msg:"", busy:false, manual:true};
@@ -803,7 +827,7 @@ function unsave(id, btn){
 
 /* ---------- keyboard ---------- */
 document.addEventListener("keydown", function(e){
-  if (!user) return;
+  if (!user || view !== "study") return;
   var tag = (e.target.tagName || "").toLowerCase();
   if (tag === "input" || tag === "select" || tag === "textarea" || e.metaKey || e.ctrlKey || e.altKey) return;
   var onButton = tag === "button";
@@ -956,9 +980,24 @@ function showLoadError(){
 var signin = {email:"", sent:false, busy:false, msg:"", bad:false};
 function showSignedOut(){
   user = null; profile = null; member = null; CARDS = []; byId = new Map(); prog.p = {}; importState = null;
-  $("#appMain").hidden = true; $("#signin").hidden = false; $(".top p").hidden = true; $("#topnav").hidden = true;
+  $("#appMain").hidden = true; $("#landing").hidden = false; $("#topSub").hidden = true; $("#topnav").hidden = true;
+  // The landing page only mentions the Read page once it's open to everyone.
+  var reader = CFG.readerAccess === "everyone";
+  document.querySelectorAll("#landing [data-reader]").forEach(function(el){ el.hidden = !reader; });
+  var after = document.querySelector("#landing [data-num-after-reader]"); if (after) after.textContent = reader ? "4" : "3";
+  if (CFG.priceLabel) $("#planPrice").textContent = CFG.priceLabel;
+  // Show the free plan in the same currency as the price (e.g. "$0" next to "$5 a month").
+  var sym = /^[^\d\s]/.exec(CFG.priceLabel || ""); if (sym) $("#freePrice").textContent = sym[0] + "0";
   renderSignin();
 }
+// Landing page buttons scroll to the sign-in box (or the explanation) instead of changing the address.
+$("#landing").addEventListener("click", function(e){
+  var a = e.target.closest('a[href^="#"]'); if (!a) return;
+  e.preventDefault();
+  var target = a.getAttribute("href") === "#how" ? $("#how") : $("#signin");
+  target.scrollIntoView({behavior:"smooth", block:"start"});
+  if (target.id === "signin") setTimeout(function(){ var i = $("#email"); if (i) i.focus({preventScroll:true}); }, 400);
+});
 function renderSignin(){
   var el = $("#signinBody");
   if (!configured) {
@@ -1018,14 +1057,19 @@ function startFor(u){
   if (user && user.id === u.id) return;
   user = {id:u.id, email:u.email};
   signin = {email:"", sent:false, busy:false, msg:"", bad:false};
-  $("#signin").hidden = true; $("#appMain").hidden = false;
+  $("#landing").hidden = true; $("#appMain").hidden = false;
+  activity = {};
   serverProgressCount = -1; loadedOnline = false;
   outbox = {up:{}, del:{}, logs:[], wipe:false};
   prog.p = {};
   var cached = loadCached();
   renderAccount();
+  route();
   if (cached) renderAll();
-  else $("#panel-cards").innerHTML = '<div class="panel-msg"><h2>Loading your words…</h2></div>';
+  else {
+    $("#panel-cards").innerHTML = '<div class="panel-msg"><h2>Loading your words…</h2></div>';
+    $("#todayStats").innerHTML = '<p class="muted">Loading your words…</p>';
+  }
   var p = refresh();
   if (/[?&]checkout=success/.test(location.search)) {
     history.replaceState(null, "", location.pathname);
@@ -1042,7 +1086,8 @@ document.addEventListener("visibilitychange", function(){
   if (Date.now() - lastPull > 30000 && outboxEmpty()) refresh();
   else flush();
   renderStairs();
-  if (prefs.mode === "cards" && !fc.revealed) { fc.cur = null; renderCard(); }
+  if (view === "home") renderHome();
+  else if (prefs.mode === "cards" && !fc.revealed) { fc.cur = null; renderCard(); }
 });
 
 /* ---------- install and offline ---------- */
@@ -1078,9 +1123,102 @@ function readerAllowed(){
   var access = CFG.readerAccess || "off";
   return access === "everyone" || (access === "admin" && !!profile && profile.role === "admin");
 }
+/* ---------- home dashboard ---------- */
+function renderHome(){
+  if (!user) return;
+  var now = Date.now(), today = dayNum(now);
+  $("#greetDate").textContent = new Date(now).toLocaleDateString([], {weekday:"long", day:"numeric", month:"long"});
+
+  // Offer to bring over progress from the earlier app (the import itself lives on the flashcards screen).
+  $("#homeImport").innerHTML = importState
+    ? '<div class="import-banner"><span>Used the earlier version of this app? Bring your progress with you.</span><a class="btn primary" href="#study/cards">Bring it over</a></div>'
+    : "";
+
+  if (!CARDS.length) return;
+  var q = queueInfo(now);
+  var due = q.learnDue.length + q.revDue.length, fresh = q.newShown, learning = q.learnDue.length + q.learnLater.length;
+  $("#todayStats").innerHTML =
+    '<div class="stat due"><b>' + due + '</b><span>to review</span></div>' +
+    '<div class="stat new"><b>' + fresh + '</b><span>new words</span></div>' +
+    '<div class="stat lrn"><b>' + learning + '</b><span>learning</span></div>';
+  var work = due + fresh;
+  $("#todayEta").textContent = work ? "about " + Math.max(1, Math.round((due * 8 + fresh * 15) / 60)) + " min" : "";
+  var cta;
+  if (work) cta = '<a class="btn primary" href="#study/cards">' + (due ? "Start studying" : "Learn new words") + '</a><a class="btn" href="#study/quiz">Quiz</a>';
+  else {
+    var nextDue = q.pool.map(function(c){ var s = state(c.id); return s ? s.due : Infinity; }).reduce(function(a, b){ return Math.min(a, b); }, Infinity);
+    cta = '<p class="note">All caught up' + (nextDue < Infinity ? ". Next review " + whenLabel(nextDue, now) : "") + '.</p>' +
+      '<a class="btn" href="#study/cards">Learn more words</a><a class="btn" href="#study/quiz">Quiz</a>';
+  }
+  if (onlyLockedChosen()) cta = '<p class="note">The levels you\'ve chosen are for members.</p><a class="btn primary" href="#study/cards">Choose levels</a>';
+  $("#todayCta").innerHTML = cta;
+
+  // Streak: days in a row with at least one answer (today counts once you've answered something).
+  var counts = activityCounts(), d = counts[today] ? today : today - 1, streak = 0;
+  while (counts[d]) { streak++; d--; }
+  $("#streakNum").textContent = streak;
+  var week = 0, max = 1, bars = "";
+  for (var i = 29; i >= 0; i--) max = Math.max(max, counts[today - i] || 0);
+  for (var j = 29; j >= 0; j--) {
+    var n = counts[today - j] || 0;
+    if (j < 7) week += n;
+    bars += '<i class="' + (n ? "" : "zero") + (j === 0 ? " now" : "") + '" style="height:' + (n ? Math.max(8, Math.round(n / max * 100)) : 6) + '%" title="' + n + ' answer' + (n === 1 ? "" : "s") + '"></i>';
+  }
+  $("#activityBars").innerHTML = bars;
+  $("#weekCount").textContent = week + " answer" + (week === 1 ? "" : "s") + " this week";
+  $("#streakHint").textContent = counts[today]
+    ? (work ? "Good start today. " + work + " more to go." : "Done for today. Come back tomorrow to keep your streak.")
+    : streak ? "Study today to keep your streak going." : "Answer a card today to start a streak.";
+
+  // Tiles: Read (with "continue reading") and Admin.
+  var reader = readerAllowed(), last = lsGet(ukey("last-text"));
+  $("#tileRead").hidden = !reader;
+  if (reader && last && last.id) { $("#tileRead").setAttribute("href", "read#t=" + encodeURIComponent(last.id)); $("#tileReadSub").textContent = "Continue: " + last.title; }
+  else { $("#tileRead").setAttribute("href", "read"); $("#tileReadSub").textContent = "Tap any word for its meaning"; }
+  $("#tileAdmin").hidden = !(profile && profile.role === "admin");
+
+  // Progress by level.
+  var learnedAll = 0, html = "";
+  for (var lv = 1; lv <= 6; lv++) {
+    var total = levelTotal(lv) + mineCount(lv);
+    if (!total) continue;
+    var learned = CARDS.filter(function(c){ var s = state(c.id); return c.lv === lv && s && s.st === 2; }).length;
+    learnedAll += learned;
+    var locked = isLocked(lv);
+    html += '<div class="lvl' + (locked ? " locked" : "") + '"><b>' + LV[lv] + '</b><span class="track"><i style="width:' + Math.round(learned / total * 100) + '%"></i></span>' +
+      '<span class="n">' + (locked ? (learned ? learned + " · " : "") + "Members" : learned + " / " + total) + '</span></div>';
+  }
+  $("#levelBars").innerHTML = html;
+  $("#learnedTotal").textContent = learnedAll + " word" + (learnedAll === 1 ? "" : "s") + " learned";
+}
+
+/* ---------- screens: home (dashboard) and study (flashcards, quiz, word list) ---------- */
+var view = "home";
+function route(){
+  if (!user) return;
+  var m = /^#study(?:\/(cards|quiz|list))?$/.exec(location.hash);
+  showView(m ? "study" : "home", m && m[1]);
+}
+function showView(v, mode){
+  var changed = view !== v;
+  view = v;
+  $("#home").hidden = v !== "home";
+  $("#study").hidden = v !== "study";
+  updateNav();
+  if (v === "study") setMode(mode || prefs.mode);
+  else renderHome();
+  if (changed) window.scrollTo(0, 0);
+}
+function updateNav(){
+  $("#navHome").hidden = view !== "study";
+  $("#navRead").hidden = !readerAllowed();
+  $("#topnav").hidden = $("#navHome").hidden && $("#navRead").hidden;
+}
+window.addEventListener("hashchange", route);
+
 function renderAll(){
   var reader = readerAllowed();
-  $(".top p").hidden = false; $("#topnav").hidden = !reader;
+  $("#topSub").hidden = false; updateNav();
   // Saved words only exist once someone has used the Read page.
   $("#srcWrap").hidden = !reader && !CARDS.some(function(c){ return c.mine; });
   if ($("#srcWrap").hidden && prefs.source === "mine") { prefs.source = "all"; $("#srcSel").value = "all"; savePrefs(); }
@@ -1088,7 +1226,7 @@ function renderAll(){
   renderStairs();
   renderAccount();
   qz.qs = null;
-  setMode(prefs.mode);
+  if (view === "study") setMode(prefs.mode); else renderHome();
 }
 
 if (!configured) { showSignedOut(); return; }
