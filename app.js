@@ -232,6 +232,7 @@ function loadCached(){
 function refresh(){
   if (!user || !navigator.onLine) return Promise.resolve();
   lastPull = Date.now();
+  loadRemind();
   return loadRemote().then(function(){
     if (!fc.revealed) fc.cur = null;
     renderAll();
@@ -576,7 +577,7 @@ function renderCard(){
     if (onlyLockedChosen()) { el.innerHTML = html + membersOnlyHtml(); return; }
     if (!q.pool.length) {
       el.innerHTML = html + (prefs.source === "mine" && !CARDS.some(function(c){ return c.mine; })
-        ? '<div class="panel-msg"><h2>No saved words yet</h2><p>On the Read page, tap a word you don\'t know and choose Add to my flashcards. It will show up here.</p><div class="actions single"><a class="btn primary" href="read">Open Read</a></div></div>'
+        ? '<div class="panel-msg"><h2>No saved words yet</h2><p>On the Read page, tap a word you don\'t know and choose Save word. It will show up here.</p><div class="actions single"><a class="btn primary" href="read">Open Read</a></div></div>'
         : '<div class="panel-msg"><h2>No words match</h2><p>Try another word type or add a level above.</p></div>');
       return;
     }
@@ -706,7 +707,7 @@ function renderQuizStart(){
   var lens = [10, 20, 40].filter(function(n){ return n < p.length; });
   if (p.length <= 60) lens.push(p.length);
   if (lens.indexOf(prefs.qlen) < 0) prefs.qlen = lens[0];
-  el.innerHTML = '<div class="panel-msg"><h2>Quiz on ' + levelLabel() + '</h2><p>' + p.length + ' words to draw from. Words you miss are marked Again, so they come straight back in your flashcards. Right answers leave your review schedule as it is.</p>' +
+  el.innerHTML = '<div class="panel-msg"><h2>Quiz on ' + levelLabel() + '</h2><p>' + p.length + ' words to draw from. Words you miss are marked Again, so they come straight back in your reviews. Right answers leave your review schedule as it is.</p>' +
     '<div class="lengths" role="group" aria-label="Number of questions">' + lens.map(function(n){
       return '<button type="button" data-len="' + n + '" aria-pressed="' + (n === prefs.qlen) + '">' + (n === p.length && n > 40 ? "All " + n : n + " questions") + '</button>';
     }).join("") + '</div>' +
@@ -763,11 +764,11 @@ function renderResults(){
   var el = $("#panel-quiz"), n = qz.qs.length;
   var html = '<div class="panel-msg"><p>Your score</p><div class="big-score">' + qz.score + ' / ' + n + '</div>';
   if (qz.misses.length) {
-    html += '<p>These are now back in your flashcards:</p><div class="misses">' + qz.misses.map(function(id){
+    html += '<p>These are now back in your reviews:</p><div class="misses">' + qz.misses.map(function(id){
       var c = byId.get(id);
       return c ? '<div class="miss"><span>' + esc(c.en) + '</span><span class="ar" lang="ar">' + esc(c.ar) + '</span></div>' : "";
     }).join("") + '</div>';
-    html += '<div class="actions"><button class="btn primary" data-act="study-misses" type="button">Practise them in flashcards</button><button class="btn" data-act="new" type="button">New quiz</button></div>';
+    html += '<div class="actions"><button class="btn primary" data-act="study-misses" type="button">Practise them in Review</button><button class="btn" data-act="new" type="button">New quiz</button></div>';
   } else {
     html += '<p>No misses this time.</p><div class="actions single"><button class="btn primary" data-act="new" type="button">New quiz</button></div>';
   }
@@ -974,6 +975,55 @@ function renderAccount(){
   $("#acctBtns").innerHTML = btns;
   setSaveStatus();
 }
+/* ---------- daily reminder email ---------- */
+// remind: null until loaded (the row stays hidden), then {on, tz}.
+var remind = null, remindBusy = false;
+function deviceTz(){ try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London"; } catch (e) { return "Europe/London"; } }
+function loadRemind(){
+  var uid = user.id;
+  // Asked for on its own, so the rest of the app still loads if 005_reminders.sql hasn't been run yet.
+  sb.from("profiles").select("remind,remind_tz").eq("id", uid).maybeSingle().then(function(r){
+    if (!user || user.id !== uid) return;
+    if (r.error || !r.data) { remind = null; renderRemind(); return; }
+    remind = {on:!!r.data.remind, tz:r.data.remind_tz};
+    renderRemind();
+    // Moved to another time zone: keep the reminder arriving in the evening there.
+    if (remind.on && remind.tz !== deviceTz()) saveRemind(true, true);
+  });
+}
+function renderRemind(){
+  var row = $("#remindRow"); if (!row) return;
+  row.hidden = !user || !remind;
+  if (remind) $("#remindBox").checked = remind.on;
+  $("#remindBox").disabled = remindBusy;
+}
+function saveRemind(on, quiet){
+  var uid = user.id, tz = deviceTz();
+  remindBusy = true; renderRemind();
+  check(sb.from("profiles").update({remind:on, remind_tz:tz}).eq("id", uid)).then(function(){
+    if (user && user.id === uid) remind = {on:on, tz:tz};
+    if (!quiet) toast(on ? "Daily reminders on. We'll only email on days you have words due and haven't studied." : "Daily reminders off.");
+  }).catch(function(err){
+    console.warn("Saving the reminder setting failed", err);
+    if (!quiet) toast(navigator.onLine ? "Couldn't save that. Please try again." : "You're offline. Try again when you're back online.");
+  }).then(function(){ remindBusy = false; renderRemind(); });
+}
+$("#remindBox").addEventListener("change", function(){
+  if (!user || !remind || remindBusy) return;
+  saveRemind(this.checked);
+});
+// The "Stop these reminders" link in each email works signed in or out: its token is the proof.
+(function(){
+  var m = /[?&]unsubscribe=([0-9a-f-]{36})(?:&|$)/i.exec(location.search);
+  if (!m || !configured) return;
+  history.replaceState(null, "", location.pathname + location.hash);
+  sb.rpc("reminder_unsubscribe", {t:m[1]}).then(function(r){
+    if (r.error) { toast("Couldn't switch reminders off. Please try the link again, or untick it in your account box.", 9000); return; }
+    if (remind) { remind.on = false; renderRemind(); }
+    toast(r.data ? "Daily reminder emails are off. You can switch them back on in your account box." : "That link has already been used or is out of date. You can switch reminders off in your account box.", 9000);
+  });
+})();
+
 function setSaveStatus(st){
   var el = $("#saveStatus"); if (!el || !user) return;
   var msg, cls = "";
@@ -1017,7 +1067,7 @@ function showLoadError(){
 /* ---------- sign in ---------- */
 var signin = {email:"", sent:false, busy:false, msg:"", bad:false};
 function showSignedOut(){
-  user = null; profile = null; member = null; CARDS = []; byId = new Map(); prog.p = {}; importState = null;
+  user = null; profile = null; member = null; CARDS = []; byId = new Map(); prog.p = {}; importState = null; remind = null; renderRemind();
   $("#appMain").hidden = true; $("#landing").hidden = false; $("#topSub").hidden = true; $("#topnav").hidden = true;
   // The landing page only mentions the Read page once it's open to everyone.
   var reader = CFG.readerAccess === "everyone";
@@ -1094,6 +1144,7 @@ $("#signinBody").addEventListener("click", function(e){
 function startFor(u){
   if (user && user.id === u.id) return;
   user = {id:u.id, email:u.email};
+  remind = null; renderRemind();
   signin = {email:"", sent:false, busy:false, msg:"", bad:false};
   $("#landing").hidden = true; $("#appMain").hidden = false;
   activity = {};
@@ -1229,7 +1280,7 @@ function renderHome(){
   $("#levelBars").innerHTML = html;
   var hard = CARDS.filter(function(c){ return isHard(state(c.id)); }).length;
   $("#hardWords").innerHTML = hard ? '<div class="hard-note"><span><b>' + hard + ' hard word' + (hard === 1 ? "" : "s") + '</b>: forgotten ' + HARD_LAPSES + '+ times. Give ' + (hard === 1 ? "it" : "them") + ' extra practice.</span>' +
-    '<span><button class="btn" data-act="practise-hard" data-to="quiz" type="button">Quiz</button> <button class="btn" data-act="practise-hard" data-to="cards" type="button">Flashcards</button></span></div>' : "";
+    '<span><button class="btn" data-act="practise-hard" data-to="quiz" type="button">Quiz</button> <button class="btn" data-act="practise-hard" data-to="cards" type="button">Review</button></span></div>' : "";
   $("#learnedTotal").textContent = learnedAll + " word" + (learnedAll === 1 ? "" : "s") + " known";
 }
 

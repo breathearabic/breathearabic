@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Breathe Arabic</title>
-<meta name="description" content="Breathe Arabic: spaced-repetition flashcards, quizzes and a word list for learning Modern Standard Arabic vocabulary, sorted by CEFR level.">
+<title>Breathe Arabic · Classical Arabic for Muslims</title>
+<meta name="description" content="Breathe Arabic helps Muslims learn Classical Arabic, the language of the Quran and the Sunnah: build your vocabulary a few minutes a day and read hadith with every word a tap away.">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#F2F3EE" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#10151F" media="(prefers-color-scheme: dark)">
@@ -312,6 +312,9 @@ footer p{margin:0;max-width:62ch}
 .acct .acct-btns .btn.primary{color:var(--lapis-ink)}
 .acct .who{color:var(--ink);font-weight:500;margin:0 0 2px}
 .acct .save{margin-top:8px;font-size:.88rem}
+.acct .remind{display:flex;gap:10px;align-items:flex-start;margin:12px 0 0;font-weight:500;cursor:pointer}
+.acct .remind input{flex:none;margin:3px 0 0;padding:0;accent-color:var(--lapis);width:18px;height:18px}
+.acct .remind small{display:block;font-weight:400;font-size:.85rem;color:var(--muted);margin-top:2px}
 .acct .links{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;align-items:center}
 .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);max-width:calc(100% - 32px);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:12px;font-size:.92rem;box-shadow:0 6px 24px rgba(0,0,0,.18);z-index:10}
 /* ===== landing page ===== */
@@ -392,7 +395,7 @@ footer p{margin:0;max-width:62ch}
     <a class="brand" href="./#" aria-label="Breathe Arabic home"><img class="logo" src="icons/logo-mark-160.png" width="72" height="72" alt=""></a>
     <div>
       <h1>Breathe Arabic</h1>
-      <p id="topSub"><span id="total"></span> Arabic words, sorted by CEFR level</p>
+      <p id="topSub">Classical Arabic, the language of the Quran and Sunnah</p><span id="total" hidden></span>
     </div>
     <nav class="topnav" id="topnav" hidden>
       <a class="pillnav" id="navHome" href="./#" hidden>Home</a>
@@ -403,10 +406,11 @@ footer p{margin:0;max-width:62ch}
   <div id="landing" hidden>
     <section class="hero">
       <div class="hero-text">
-        <h2>Learn the words of Arabic, and keep them for life.</h2>
-        <p>Breathe Arabic is a vocabulary app for Muslims learning Modern Standard Arabic, the language of the Quran. Study for a few minutes a day, and every word comes back just before you'd forget it.</p>
+        <h2>Learn the language of the Quran and the Sunnah.</h2>
+        <p>Breathe Arabic is where Muslims learn Classical Arabic (Fusha): the Arabic of the Quran, the hadith and the scholars. Build your vocabulary a few minutes a day, read real texts of the deen, and keep every word for life.</p>
         <ul class="ticks">
-          <li>913 words from beginner (A1) to advanced (C2)</li>
+          <li>913 words, from beginner (A1) to advanced (C2)</li>
+          <li data-reader>Read hadith with every word a tap away</li>
           <li>Natural Arabic audio for every word</li>
           <li>On your phone and computer, even offline</li>
         </ul>
@@ -423,10 +427,10 @@ footer p{margin:0;max-width:62ch}
     <section class="features" id="how" aria-labelledby="howTitle">
       <h2 id="howTitle">How it works</h2>
       <div class="feature-grid">
-        <div class="feature"><span class="fnum">1</span><h3>Flashcards that remember for you</h3><p>See a word, recall it, and tap "I remember" or "I don't remember". The same memory model as Anki schedules each word to return just before you'd forget it, so a few minutes a day goes a long way.</p></div>
+        <div class="feature"><span class="fnum">1</span><h3>Reviews that remember for you</h3><p>See a word, recall it, and tap "I remember" or "I don't remember". The same memory model as Anki schedules each word to return just before you'd forget it, so a few minutes a day goes a long way.</p></div>
         <div class="feature"><span class="fnum">2</span><h3>Hear every word</h3><p>Natural Arabic pronunciation on every card, with real example sentences that show each word in use.</p></div>
-        <div class="feature" data-reader><span class="fnum">3</span><h3>Read real Arabic</h3><p>Open a text, tap any word for its meaning, and add new words to your flashcards in one tap.</p></div>
-        <div class="feature"><span class="fnum" data-num-after-reader>3</span><h3>Climb the levels</h3><p>Words are grouped by CEFR level, from everyday basics to the vocabulary of articles, sermons and books. Watch each step of the staircase fill up.</p></div>
+        <div class="feature" data-reader><span class="fnum">3</span><h3>Read the texts of your deen</h3><p>Read hadith and classical texts, starting with Imam Nawawi's Forty Hadith. Tap any word for its meaning in that sentence, and save it to your reviews in one tap.</p></div>
+        <div class="feature"><span class="fnum" data-num-after-reader>3</span><h3>Climb the levels</h3><p>Words are grouped into six levels, from the basics to the vocabulary of tafsir, hadith and the classical books. Watch each step of the staircase fill up.</p></div>
       </div>
     </section>
 
@@ -438,7 +442,7 @@ footer p{margin:0;max-width:62ch}
           <p class="price" id="freePrice">£0</p>
           <ul class="ticks">
             <li>Every A1 and A2 word</li>
-            <li>Flashcards, quizzes and the word list</li>
+            <li>Reviews, quizzes and the word list</li>
             <li>Progress saved across your devices</li>
           </ul>
           <a class="btn" href="#start">Start free</a>
@@ -449,7 +453,7 @@ footer p{margin:0;max-width:62ch}
           <ul class="ticks">
             <li>Everything in Free</li>
             <li>All levels, B1 to C2</li>
-            <li data-reader>The full reading library and unlimited word lookups</li>
+            <li data-reader>The full reading library, including all of the Forty Hadith, and unlimited word lookups</li>
             <li>Cancel any time</li>
           </ul>
           <a class="btn primary" href="#start">Start free, upgrade any time</a>
@@ -459,9 +463,10 @@ footer p{margin:0;max-width:62ch}
 
     <section class="faq" aria-labelledby="faqTitle">
       <h2 id="faqTitle">Questions</h2>
-      <details><summary>Do I need to read Arabic script?</summary><p>Yes: Breathe Arabic teaches vocabulary, so you'll want to know the alphabet first. Most words show their vowel marks, and every word has audio.</p></details>
-      <details><summary>What do A1 to C2 mean?</summary><p>They're the CEFR levels used for languages worldwide, from beginner (A1) to mastery (C2). Arabic has no official CEFR word list, so the levels here are careful estimates based on how common and how abstract each word is.</p></details>
-      <details><summary>Is this Fusha or a dialect?</summary><p>Modern Standard Arabic (Fusha): the formal Arabic of books, news and khutbahs, closely related to the Arabic of the Quran, and understood across the Arab world.</p></details>
+      <details><summary>Who is Breathe Arabic for?</summary><p>Muslims who want to understand the Quran, the hadith and their prayers in the original Arabic, whether you're starting out or picking your studies back up.</p></details>
+      <details><summary>Do I need to read Arabic script?</summary><p>Yes: you'll want to know the alphabet first. Most words show their vowel marks, and every word has audio.</p></details>
+      <details><summary>What do A1 to C2 mean?</summary><p>Six levels, from beginner (A1) to mastery (C2), named after the scale used for languages worldwide. They're careful estimates based on how common each word is in the Quran, hadith and classical texts, and how abstract it is.</p></details>
+      <details><summary>Is this Fusha or a dialect?</summary><p>Fusha. Breathe Arabic teaches Classical Arabic: the language of the Quran, the Sunnah and centuries of Islamic scholarship, and of the khutbah and du'a today. It doesn't teach spoken dialects.</p></details>
       <details><summary>Can I cancel my membership?</summary><p>Yes, any time, from your account. You keep access until the end of the period you've paid for, and your progress stays saved.</p></details>
     </section>
 
@@ -494,7 +499,7 @@ footer p{margin:0;max-width:62ch}
     </section>
 
     <nav class="tiles" aria-label="Study">
-      <a class="tile" href="#study/cards"><span class="tile-ico" aria-hidden="true">▤</span><span><b>Flashcards</b><small>Review what's due, learn new words</small></span></a>
+      <a class="tile" href="#study/cards"><span class="tile-ico" aria-hidden="true">▤</span><span><b>Review</b><small>What's due today, plus new words</small></span></a>
       <a class="tile" href="#study/quiz"><span class="tile-ico" aria-hidden="true">✓</span><span><b>Quiz</b><small>Multiple choice on any level</small></span></a>
       <a class="tile" href="#study/list"><span class="tile-ico" aria-hidden="true">≣</span><span><b>Word list</b><small>Search every word and its memory</small></span></a>
       <a class="tile" href="read" id="tileRead" hidden><span class="tile-ico ar" aria-hidden="true">اقرأ</span><span><b>Read</b><small id="tileReadSub">Tap any word for its meaning</small></span></a>
@@ -512,6 +517,7 @@ footer p{margin:0;max-width:62ch}
       <p class="who" id="acctEmail"></p>
       <p id="acctPlan"></p>
       <p class="save" id="saveStatus" aria-live="polite"></p>
+      <label class="remind" id="remindRow" hidden><input type="checkbox" id="remindBox"> <span>Email me a daily reminder<small id="remindNote">One short email in the early evening on days you have words due and haven't studied yet.</small></span></label>
       <div class="acct-btns" id="acctBtns"></div>
       <div class="links">
         <button class="link" id="signOutBtn" type="button">Sign out</button>
@@ -529,7 +535,7 @@ footer p{margin:0;max-width:62ch}
   </section>
 
   <div class="tabs" role="tablist" aria-label="Study mode">
-    <button class="tab" role="tab" id="tab-cards" data-mode="cards" type="button">Flashcards</button>
+    <button class="tab" role="tab" id="tab-cards" data-mode="cards" type="button">Review</button>
     <button class="tab" role="tab" id="tab-quiz" data-mode="quiz" type="button">Quiz</button>
     <button class="tab" role="tab" id="tab-list" data-mode="list" type="button">Word list</button>
   </div>
@@ -583,7 +589,7 @@ footer p{margin:0;max-width:62ch}
   </main>
   <footer>
     <p>Words come up in order of when they're due, oldest first, whatever their level, and the same word never comes back until a few others have been shown. New words are added in deck order and come back after 10 minutes and then an hour while you're learning them. Reviews are scheduled with FSRS, the memory model Anki uses, with two buttons like a pass/fail setup. Each time you remember a word, its memory gets stronger and the next review moves further out; each time you forget it, it goes back to learning. A word counts as <b>known</b> once its memory lasts three weeks, which usually takes three or four correct answers spread over a couple of weeks. A word forgotten six times becomes a <b>hard word</b>, which you can practise on its own. A new study day starts at 4am.</p>
-    <p>CEFR has no official word list for Arabic, so the levels here are estimates for learners of Modern Standard Arabic, based on how common and how abstract each word is.</p>
+    <p>The levels are estimates for learners of Classical Arabic, based on how common each word is in the Quran, hadith and classical texts, and how abstract it is.</p>
     <p><a href="privacy">Privacy</a> · <a href="terms">Terms</a></p>
     <p><button class="link danger" id="resetBtn" type="button">Reset all my progress</button></p>
   </footer>

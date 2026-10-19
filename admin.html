@@ -161,7 +161,7 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
 
     <section class="box" aria-labelledby="libTitle">
       <h2 id="libTitle">Reading library</h2>
-      <p>Texts for the Read page. Tick "Free" for texts free accounts can read; the rest are for members. Learners tap any word for its meaning and can save it to their flashcards.</p>
+      <p>Texts for the Read page. Tick "Free" for texts free accounts can read; the rest are for members. Learners tap any word for its meaning and can save it to their reviews.</p>
       <p>To make a <strong>book</strong>, give each chapter the same book title and a chapter number. Learners see the book as one item and move through its chapters in order. A free first chapter makes a good taster. Leave the book title empty for a single text.</p>
       <div id="libList"></div>
       <form id="libForm" novalidate style="margin-top:14px;display:grid;gap:8px">
@@ -574,7 +574,7 @@ $("#libList").addEventListener("click", function(e){
     $("#libBook").value = t.book || ""; $("#libChapter").value = t.chapter != null ? t.chapter : "";
     $("#libSave").textContent = "Save changes"; $("#libCancel").hidden = false; $("#libTitleIn").focus();
   }
-  if (del && confirm("Delete this text? Learners' saved words from it stay in their flashcards.")) {
+  if (del && confirm("Delete this text? Learners' saved words from it stay in their reviews.")) {
     check(sb.from("texts").delete().eq("id", del.dataset.libdel)).then(loadLibrary).catch(function(err){ setMsg($("#libMsg"), "Couldn't delete: " + err.message, "bad"); });
   }
 });

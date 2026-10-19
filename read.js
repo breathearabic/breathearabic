@@ -309,8 +309,9 @@ function getText(id){
 }
 
 /* ---------- the reader ---------- */
-var sentences = [];
+var sentences = [], textId = null; // textId: the library text or book chapter being read, if it is one
 function renderText(t, tid){
+  textId = tid && libEntry(tid) ? tid : null;
   closePop();
   if (!t) { main.innerHTML = '<div class="panel"><p>That text isn\'t available. It may be for members only, or deleted.</p><div class="row"><button class="btn" data-act="home" type="button">Back to texts</button></div></div>'; return; }
   sentences = [""];
@@ -446,7 +447,7 @@ function lookup(text, sentence, range){
 function translate(){
   var c = cur; c.state = "loading"; renderPop();
   if (!navigator.onLine) { c.state = "offline"; renderPop(); return; }
-  sb.functions.invoke("translate", {body:{text:c.text, sentence:c.sentence || ""}}).then(function(r){
+  sb.functions.invoke("translate", {body:{text:c.text, sentence:c.sentence || "", text_id:textId}}).then(function(r){
     if (c !== cur) return;
     var d = r.data;
     if (r.error && r.error.context && typeof r.error.context.json === "function") {
@@ -475,13 +476,13 @@ function renderPop(){
     var k = c.card;
     // A word that's one part of a combined card ("التالي × السابق") is labelled "from the card …".
     var where = c.partOf ? " · from the card " : normKey(k.ar) !== normKey(c.text) ? " · listed as " : "";
-    html += '<p class="meaning">' + esc(c.meaning || k.en) + '</p><p class="sub">' + (k.mine ? "In your saved words" : "In your flashcards") + ' · ' + LV[k.lv] + ' ' + TY[k.ty] + ' · ' + stage(k) +
+    html += '<p class="meaning">' + esc(c.meaning || k.en) + '</p><p class="sub">' + (k.mine ? "In your saved words" : "In your words") + ' · ' + LV[k.lv] + ' ' + TY[k.ty] + ' · ' + stage(k) +
       (where ? where + '<span lang="ar" style="font-family:var(--ar)">' + esc(k.ar) + '</span>' + (c.partOf && c.meaning !== k.en ? ' (' + esc(k.en) + ')' : "") : "") + '</p>' +
       '<div class="row"><button class="link" data-act="translate" type="button">Translate this exact form</button></div>';
   } else if (c.state === "loading") html += '<p class="sub">Looking it up…</p>';
-  else if (c.state === "offline") html += '<p class="sub">You\'re offline. Words already in your flashcards still show their meaning; new words need a connection.</p>';
+  else if (c.state === "offline") html += '<p class="sub">You\'re offline. Words you\'re already learning still show their meaning; new words need a connection.</p>';
   else if (c.state === "error") html += '<p class="sub">Couldn\'t translate that just now. Try again in a moment.</p><div class="row"><button class="btn small" data-act="translate" type="button">Try again</button></div>';
-  else if (c.state === "limit") html += '<p class="meaning">That\'s today\'s ' + FREE_LOOKUPS + ' free lookups</p><p class="sub">Members get unlimited lookups and the whole library. Words already in your flashcards still work.</p>' +
+  else if (c.state === "limit") html += '<p class="meaning">That\'s today\'s ' + FREE_LOOKUPS + ' free lookups</p><p class="sub">Members get unlimited lookups and the whole library. Words you\'re already learning still work.</p>' +
     '<div class="row"><button class="btn primary" data-act="subscribe" type="button">Subscribe' + (CFG.priceLabel ? " · " + esc(CFG.priceLabel) : "") + '</button></div>';
   else if (c.state === "translated" || c.state === "saving" || c.state === "saved" || c.state === "save-error") {
     if (c.translation) html += '<p class="meaning">' + esc(c.translation) + '</p><p class="sub">' +
@@ -492,7 +493,7 @@ function renderPop(){
     if (c.state !== "saved") {
       html += (c.editing ? '<input class="edit" id="editMeaning" value="' + esc(c.edited != null ? c.edited : c.translation) + '" aria-label="Meaning to save"' +
         (c.translation ? "" : ' placeholder="Its meaning (or leave empty and AI will add one)"') + '>' : "") +
-        '<div class="row"><button class="btn primary" data-act="save" type="button"' + (c.state === "saving" ? " disabled" : "") + '>' + (c.state === "saving" ? "Saving…" : "Add to my flashcards") + '</button>' +
+        '<div class="row"><button class="btn primary" data-act="save" type="button"' + (c.state === "saving" ? " disabled" : "") + '>' + (c.state === "saving" ? "Saving…" : "Save word") + '</button>' +
         (c.editing ? "" : '<button class="link" data-act="edit" type="button">Edit meaning</button>') + '</div>';
     }
   }
@@ -548,7 +549,7 @@ function save(){
       var card = toCard(d.card);
       if (!cards.some(function(x){ return x.id === card.id; })) { cards.push(card); lsSet(ukey("cards"), cards); indexCards(); }
       c.state = "saved";
-      c.savedMsg = d.already ? "Already in your saved words." : "Saved as " + LV[card.lv] + " " + TY[card.ty] + ": " + card.en + ". It will come up in your flashcards.";
+      c.savedMsg = d.already ? "Already in your saved words." : "Saved as " + LV[card.lv] + " " + TY[card.ty] + ": " + card.en + ". It will come up in your reviews.";
       refreshUnderlines();
     } else {
       c.state = "save-error";
