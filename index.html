@@ -270,6 +270,12 @@ footer p{margin:0;max-width:62ch}
 .gbtn.easy{color:var(--lapis);border-color:var(--lapis)}
 @media (hover:none){ .gbtn kbd{display:none} }
 .st.s3{background:var(--wrong-soft);color:var(--wrong)}
+.st.sy{background:color-mix(in srgb,var(--known) 12%,transparent);color:var(--known)}
+.st.hard{background:var(--wrong-soft);color:var(--wrong);margin-left:auto}
+.st.hard + .st{margin-left:6px}
+.dot.sy{border-color:var(--known)} .dot.sy::after{background:color-mix(in srgb,var(--known) 55%,transparent)}
+.hard-note{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:.92rem}
+.hard-note .btn{padding:7px 14px;font-size:.88rem}
 .mem{font-size:.88rem;color:var(--muted);margin:8px 0 0}
 .row-ex .btn{margin-top:10px;padding:7px 12px;font-size:.85rem}
 .dot{cursor:default}
@@ -499,6 +505,7 @@ footer p{margin:0;max-width:62ch}
     <section class="progress" aria-labelledby="progTitle">
       <div class="today-head"><h2 id="progTitle">Your progress</h2><span id="learnedTotal" class="muted"></span></div>
       <div id="levelBars"></div>
+      <div id="hardWords"></div>
     </section>
 
     <section class="syncbox acct" aria-labelledby="acctTitle">
@@ -558,7 +565,8 @@ footer p{margin:0;max-width:62ch}
     <label id="srcWrap" hidden>Words
       <select id="srcSel">
         <option value="all">All words</option>
-        <option value="mine">Only my saved words</option>
+        <option value="mine" id="srcMine">Only my saved words</option>
+        <option value="hard">Only hard words</option>
       </select>
     </label>
   </div>
@@ -570,12 +578,12 @@ footer p{margin:0;max-width:62ch}
     <section id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden></section>
     <section id="panel-list" role="tabpanel" aria-labelledby="tab-list" hidden>
       <input class="search" id="search" type="search" placeholder="Search in Arabic or English" aria-label="Search words" autocomplete="off">
-      <div class="legend"><span><i style="border:1.5px solid var(--line)"></i>New</span><span><i style="background:var(--learning)"></i>Learning</span><span><i style="background:var(--known)"></i>Learned</span><span>Tap a word to see its example and memory details.</span></div>
+      <div class="legend"><span><i style="border:1.5px solid var(--line)"></i>New</span><span><i style="background:var(--learning)"></i>Learning</span><span><i style="background:color-mix(in srgb,var(--known) 55%,transparent)"></i>Young</span><span><i style="background:var(--known)"></i>Known (memory lasts 3+ weeks)</span><span>Tap a word to see its example and memory details.</span></div>
       <div id="list"></div>
     </section>
   </main>
   <footer>
-    <p>Words come up in order of when they're due, oldest first, whatever their level. New words are added in deck order. Reviews are scheduled with FSRS, the memory model Anki uses, with two buttons like a pass/fail setup. Each time you remember a word, its memory gets stronger and the next review moves further out. Each time you forget it, the memory weakens and the word comes back within minutes. Every word returns when your chance of remembering it drops to about 90%. A new study day starts at 4am.</p>
+    <p>Words come up in order of when they're due, oldest first, whatever their level, and the same word never comes back until a few others have been shown. New words are added in deck order and come back after 10 minutes and then an hour while you're learning them. Reviews are scheduled with FSRS, the memory model Anki uses, with two buttons like a pass/fail setup. Each time you remember a word, its memory gets stronger and the next review moves further out; each time you forget it, it goes back to learning. A word counts as <b>known</b> once its memory lasts three weeks, which usually takes three or four correct answers spread over a couple of weeks. A word forgotten six times becomes a <b>hard word</b>, which you can practise on its own. A new study day starts at 4am.</p>
     <p>CEFR has no official word list for Arabic, so the levels here are estimates for learners of Modern Standard Arabic, based on how common and how abstract each word is.</p>
     <p><a href="privacy">Privacy</a> · <a href="terms">Terms</a></p>
     <p><button class="link danger" id="resetBtn" type="button">Reset all my progress</button></p>

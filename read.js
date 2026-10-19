@@ -110,15 +110,18 @@ function match(text){
   for (var i = 1; i < c.length; i++) if (byKey.has(c[i])) return bestOf(byKey.get(c[i]));
   return null;
 }
+// Same stages as the flashcards: known once its memory lasts KNOWN_DAYS (21 by default).
+var KNOWN_DAYS = +CFG.knownDays || 21;
 function stage(card){
   var s = prog[card.id];
   if (!s) return card.mine ? "saved, not studied yet" : "not studied yet";
-  return s.st === 2 ? "learned" : "learning";
+  if (s.st !== 2) return "learning";
+  return s.s >= 90 ? "mastered" : s.s >= KNOWN_DAYS ? "known" : "young";
 }
 function cls(card){
   if (!card) return "";
   var s = prog[card.id];
-  if (s) return s.st === 2 ? "k2" : "k1";
+  if (s) return s.st !== 2 ? "k1" : s.s >= KNOWN_DAYS ? "k2" : "ky";
   return card.mine ? "k0" : "";
 }
 
@@ -271,7 +274,7 @@ function renderText(t){
   main.innerHTML = '<div class="reader-head"><button class="btn small" data-act="home" type="button">← Texts</button><h2>' + esc(t.title) + '</h2>' +
     '<span class="allow" id="allow">' + (free && allowance != null ? allowance + " free lookups left today" : "") + '</span></div>' +
     '<div class="text" id="text" lang="ar" dir="rtl">' + html + '</div>' +
-    '<div class="legend"><span><i style="border-color:var(--known)"></i>Learned</span><span><i style="border-color:var(--learning)"></i>Learning</span><span><i style="border-color:var(--lapis)"></i>Saved</span><span>Tap a word. For several, drag across them (on a phone, hold a moment first).</span></div>';
+    '<div class="legend"><span><i style="border-color:var(--known)"></i>Known</span><span><i style="border-color:color-mix(in srgb,var(--known) 50%,transparent)"></i>Young</span><span><i style="border-color:var(--learning)"></i>Learning</span><span><i style="border-color:var(--lapis)"></i>Saved</span><span>Tap a word. For several, drag across them (on a phone, hold a moment first).</span></div>';
 }
 function refreshUnderlines(){
   document.querySelectorAll("#text .w").forEach(function(el){

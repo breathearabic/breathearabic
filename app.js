@@ -22,8 +22,26 @@ function addDays(ms, n){ var d = new Date(dayStart(ms)); d.setDate(d.getDate() +
 var sched = makeScheduler({
   elapsed: function(last, now){ return dayNum(now) - dayNum(last); },
   reviewDue: function(now, days){ return addDays(now, days); },
-  fuzz: true
+  fuzz: true,
+  // A new or forgotten word comes back after 10 minutes, then an hour, before its first multi-day review.
+  learnSteps: [10, 60],
+  relearnSteps: [10, 60]
 });
+
+/* ---------- stages, Anki-style ----------
+   New → Learning (first steps, or just forgotten) → Young (memory lasts under KNOWN_DAYS) → Known → Mastered.
+   "Memory" is FSRS stability: the days until the chance of remembering drops to 90%. */
+var KNOWN_DAYS = +CFG.knownDays || 21, MASTERED_DAYS = 90;
+var HARD_LAPSES = +CFG.hardWordLapses || 6;   // forgotten this many times after being learned = a hard word
+function stageOf(s){
+  if (!s) return "new";
+  if (s.st === 1) return "learning";
+  if (s.st === 3) return "relearning";
+  return s.s >= MASTERED_DAYS ? "mastered" : s.s >= KNOWN_DAYS ? "known" : "young";
+}
+function isKnown(s){ return !!s && s.st === 2 && s.s >= KNOWN_DAYS; }
+function isHard(s){ return !!s && (s.l || 0) >= HARD_LAPSES; }
+var STAGE_LABEL = {"new":"New", learning:"Learning", relearning:"Relearning", young:"Young", known:"Known", mastered:"Mastered"};
 
 /* ---------- Supabase ---------- */
 var configured = !!(CFG.supabaseUrl && CFG.supabaseKey && window.supabase);
@@ -244,7 +262,10 @@ function levelTotal(lv){
   return Math.max(s ? s.total : 0, deckVisible(lv));
 }
 // A level is locked when the deck has words there that this account can't see.
-function isLocked(lv){ return prefs.source !== "mine" && levelTotal(lv) > deckVisible(lv); }
+// "Words" filter: all words, only saved words (Read page), or only hard words.
+function sourceOk(c){ return prefs.source === "mine" ? c.mine : prefs.source === "hard" ? isHard(state(c.id)) : true; }
+function filtered(){ return prefs.source === "mine" || prefs.source === "hard"; }
+function isLocked(lv){ return !filtered() && levelTotal(lv) > deckVisible(lv); }
 function lockedSelected(){ return prefs.levels.filter(isLocked).sort(); }
 function lockedWordCount(levels){ return levels.reduce(function(n, lv){ return n + levelTotal(lv) - deckVisible(lv); }, 0); }
 
@@ -254,7 +275,7 @@ function typeOk(c){
   if (prefs.type === "other") return c.ty === "d" || c.ty === "r";
   return c.ty === prefs.type;
 }
-function pool(){ return CARDS.filter(function(c){ return prefs.levels.indexOf(c.lv) > -1 && typeOk(c) && (prefs.source !== "mine" || c.mine); }); }
+function pool(){ return CARDS.filter(function(c){ return prefs.levels.indexOf(c.lv) > -1 && typeOk(c) && sourceOk(c); }); }
 function levelNames(){ return prefs.levels.slice().sort().map(function(l){ return LV[l]; }); }
 function levelLabel(cap){ return prefs.levels.length >= 6 ? (cap ? "All levels" : "all levels") : joinNames(levelNames()); }
 function joinNames(a){ return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
@@ -272,7 +293,7 @@ function queueInfo(now){
   p.forEach(function(c){
     var s = state(c.id);
     if (!s) { fresh.push(c); return; }
-    if (s.st === 2) { learned++; if (s.due <= now) revDue.push(c); }
+    if (s.st === 2) { if (isKnown(s)) learned++; if (s.due <= now) revDue.push(c); }
     else { learning++; if (s.due <= now) learnDue.push(c); else learnLater.push(c); }
   });
   var byDue = function(a, b){ return state(a.id).due - state(b.id).due; };
@@ -281,20 +302,35 @@ function queueInfo(now){
   var newLeft = Math.max(0, newLimitToday(now) - newStartedToday(now));
   return {pool:p, learnDue:learnDue, learnLater:learnLater, revDue:revDue, fresh:fresh, newShown:Math.min(newLeft, fresh.length), newLeft:newLeft, learned:learned, learning:learning};
 }
-function pickNext(now, avoid){
-  var q = queueInfo(now);
+/* Spacing: a word you've just answered sits out until SPACING other cards have been shown (or RECENT_MS
+   has passed), so you never see the same word back-to-back. Learning words are only shown early when
+   there's nothing else at all, and never straight after themselves. */
+var SPACING = 5, RECENT_MS = 10 * MINUTE;
+function recentIds(now){ return fc.recent.filter(function(r){ return now - r.at < RECENT_MS; }).slice(-SPACING).map(function(r){ return r.id; }); }
+function pickNext(now){
+  var q = queueInfo(now), recent = recentIds(now);
+  var fresh = function(c){ return recent.indexOf(c.id) < 0; };
   var due = q.learnDue.concat(q.revDue).sort(function(a, b){ return state(a.id).due - state(b.id).due; });
-  var lists = [due, q.newShown ? q.fresh.slice(0, q.newShown) : []];
-  for (var i = 0; i < lists.length; i++) {
-    var l = lists[i].filter(function(c){ return c.id !== avoid; });
-    if (l.length) return l[0].id;
-  }
-  var ahead = q.learnLater.filter(function(c){ return state(c.id).due <= now + LEARN_AHEAD; });
-  var other = ahead.filter(function(c){ return c.id !== avoid; });
-  if (other.length) return other[0].id;
-  if (ahead.length) return ahead[0].id;
-  var leftovers = q.learnDue.concat(q.revDue);
-  return leftovers.length ? leftovers[0].id : null;
+  var news = q.newShown ? q.fresh.slice(0, q.newShown) : [];
+  var ahead = q.learnLater.filter(function(c){ return state(c.id).due <= now + LEARN_AHEAD && fresh(c); });
+  var pick = due.filter(fresh)[0] || news.filter(fresh)[0] || ahead[0];
+  if (pick) return pick.id;
+  // Only words seen a few cards ago are left. One that's actually due may come back now:
+  // the one seen longest ago, to keep repeats as far apart as possible.
+  if (!due.length) return null;
+  var lastSeen = function(c){ var r = fc.recent.filter(function(x){ return x.id === c.id; }).pop(); return r ? r.at : 0; };
+  return due.slice().sort(function(a, b){ return lastSeen(a) - lastSeen(b); })[0].id;
+}
+// When the next learning word becomes available (due, or early once it's no longer "just seen").
+function nextAvailableAt(now){
+  var q = queueInfo(now), best = Infinity;
+  q.learnLater.forEach(function(c){
+    var due = state(c.id).due, early = due - LEARN_AHEAD;
+    var seen = fc.recent.filter(function(r){ return r.id === c.id; }).pop();
+    if (seen) early = Math.max(early, seen.at + RECENT_MS);
+    best = Math.min(best, Math.min(due, early));
+  });
+  return best;
 }
 
 /* ---------- staircase ---------- */
@@ -320,20 +356,20 @@ function renderStairs(){
   var steps = stairs.querySelectorAll(".step");
   for (var k = 0; k < steps.length; k++) {
     var b = steps[k], lv = +b.dataset.lv;
-    var cs = CARDS.filter(function(c){ return c.lv === lv && (prefs.source !== "mine" || c.mine); });
-    var total = prefs.source === "mine" ? mineCount(lv) : levelTotal(lv) + mineCount(lv), locked = isLocked(lv);
-    var learned = cs.filter(function(c){ var s = state(c.id); return s && s.st === 2; }).length;
+    var cs = CARDS.filter(function(c){ return c.lv === lv && sourceOk(c); });
+    var total = filtered() ? cs.length : levelTotal(lv) + mineCount(lv), locked = isLocked(lv);
+    var learned = cs.filter(function(c){ return isKnown(state(c.id)); }).length;
     var pct = total ? Math.round(learned / total * 100) : 0;
     b.style.setProperty("--fill", pct + "%");
     b.classList.toggle("locked", locked);
     b.querySelector(".ct").textContent = locked ? "Members" : learned + "/" + total;
     b.setAttribute("aria-pressed", prefs.levels.indexOf(lv) > -1 ? "true" : "false");
-    b.setAttribute("aria-label", LV[lv] + ": " + total + " words, " + (locked ? "members only" : learned + " learned"));
-    b.disabled = !total && prefs.source !== "mine";
+    b.setAttribute("aria-label", LV[lv] + ": " + total + " words, " + (locked ? "members only" : learned + " known"));
+    b.disabled = !total && !filtered();
   }
   var q = queueInfo(Date.now());
   var due = q.learnDue.length + q.revDue.length;
-  $("#levelSummary").textContent = levelLabel(true) + ": " + q.pool.length + " words. " + q.learned + " learned, " + due + " due, " + q.fresh.length + " new.";
+  $("#levelSummary").textContent = levelLabel(true) + ": " + q.pool.length + " words. " + q.learned + " known, " + due + " due, " + q.fresh.length + " new.";
   renderLockBanner();
 }
 function renderLockBanner(){
@@ -376,7 +412,7 @@ typeSel.addEventListener("change", function(){ prefs.type = this.value; savePref
 dirSel.addEventListener("change", function(){ prefs.dir = this.value; savePrefs(); if (prefs.mode === "cards") renderCard(); if (qz.qs && qz.i < qz.qs.length) renderQuestion(); });
 newSel.addEventListener("change", function(){ prefs.newPerDay = +this.value; savePrefs(); fc.cur = null; renderStairs(); renderCard(); });
 var srcSel = $("#srcSel");
-srcSel.value = prefs.source === "mine" ? "mine" : "all";
+srcSel.value = prefs.source === "mine" || prefs.source === "hard" ? prefs.source : "all";
 srcSel.addEventListener("change", function(){ prefs.source = this.value; savePrefs(); onFilterChange(); });
 function onFilterChange(){
   renderStairs();
@@ -401,12 +437,10 @@ function exHtml(c, cls){
     return '<div class="ex"><p class="ex-ar" lang="ar">' + esc(e[0]) + '</p><p class="ex-en">' + esc(e[1]) + '</p></div>';
   }).join("") + '</div>';
 }
+var STAGE_CLASS = {"new":"", learning:"s1", relearning:"s3", young:"sy", known:"s2", mastered:"s2"};
 function stageTag(id){
-  var s = state(id);
-  if (!s) return '<span class="st">New</span>';
-  if (s.st === 2) return '<span class="st s2">Review</span>';
-  if (s.st === 3) return '<span class="st s3">Relearning</span>';
-  return '<span class="st s1">Learning</span>';
+  var s = state(id), st = stageOf(s);
+  return (isHard(s) ? '<span class="st hard">Hard word</span>' : "") + '<span class="st ' + STAGE_CLASS[st] + '">' + STAGE_LABEL[st] + '</span>';
 }
 function ivlLabel(next, now){
   if (next.st !== 2) { var m = Math.max(1, Math.round((next.due - now) / MINUTE)); return m < 60 ? m + "m" : Math.round(m / 60) + "h"; }
@@ -431,8 +465,12 @@ function memoryLine(id, now){
   var parts = [];
   parts.push(s.st === 2 ? (s.due <= now ? "Due for review now." : "Next review " + whenLabel(s.due, now) + ".") : (s.due <= now ? "Still in its learning steps and due now." : "Still in its learning steps; comes back " + whenLabel(s.due, now) + "."));
   parts.push("Memory lasts about " + memDays(s.s) + " before recall drops to 90%.");
+  var st = stageOf(s);
+  if (st === "young") parts.push("It counts as known once its memory reaches " + KNOWN_DAYS + " days.");
+  else if (st === "known" || st === "mastered") parts.push(st === "mastered" ? "Mastered: memory lasts " + MASTERED_DAYS + "+ days." : "Known: memory lasts " + KNOWN_DAYS + "+ days.");
   if (s.st === 2) parts.push("Chance you'd remember it right now: " + r + "%.");
   parts.push("Reviewed " + s.r + " time" + (s.r === 1 ? "" : "s") + (s.l ? ", forgotten " + s.l + " time" + (s.l === 1 ? "" : "s") : "") + ".");
+  if (isHard(s)) parts.push("A hard word: forgotten " + s.l + " times after learning it. Try the example sentence or saying it aloud.");
   return parts.join(" ");
 }
 function dateLabel(iso){ return new Date(iso).toLocaleDateString([], {day:"numeric", month:"long", year:"numeric"}); }
@@ -530,13 +568,13 @@ $("#panel-cards").addEventListener("click", function(e){
 }, true);
 
 /* ---------- flashcards ---------- */
-var fc = {cur:null, revealed:false, last:null, lastAt:0, undo:null, timer:null};
+var fc = {cur:null, revealed:false, recent:[], undo:null, timer:null};
 function renderCard(){
   var el = $("#panel-cards"), now = Date.now();
   clearTimeout(fc.timer);
   if (importState) { el.innerHTML = importHtml(); return; }
   if (fc.cur && !byId.has(fc.cur)) fc.cur = null;
-  if (!fc.cur) { fc.cur = pickNext(now, now - fc.lastAt < 10 * MINUTE ? fc.last : null); fc.revealed = false; }
+  if (!fc.cur) { fc.cur = pickNext(now); fc.revealed = false; }
   var q = queueInfo(now);
   var countsHtml = '<span class="counts"><span class="cn"><b>' + q.newShown + '</b> new</span><span class="cl"><b>' + (q.learnDue.length + q.learnLater.length) + '</b> learning</span><span class="cr"><b>' + q.revDue.length + '</b> to review</span></span>';
   var undoHtml = fc.undo ? '<button class="link" data-act="undo" type="button">Undo</button>' : "";
@@ -570,7 +608,7 @@ function renderCard(){
       '<div class="done-list">' + lines.map(function(x){ return '<p>' + esc(x) + '</p>'; }).join("") + '</div>' +
       '<div class="actions' + (moreBtn ? "" : " single") + '">' + moreBtn + '<button class="btn primary" data-act="to-quiz" type="button">Quiz yourself instead</button></div></div>';
     if (nextLearn) {
-      var wait = state(nextLearn.id).due - LEARN_AHEAD - now;
+      var wait = nextAvailableAt(now) - now;
       if (wait < 6 * 3600000) fc.timer = setTimeout(function(){ if (prefs.mode === "cards") renderCard(); }, Math.max(wait, 1000) + 500);
     }
     return;
@@ -612,7 +650,8 @@ function rate(g){
   fc.undo = {id:id, prev:state(id), extra:prefs.extra ? Object.assign({}, prefs.extra) : null, logs:outbox.logs.length};
   prog.p[id] = sched.review(state(id), g, now);
   queueLog(id, g, now);
-  fc.last = id; fc.lastAt = now; fc.cur = null; fc.revealed = false;
+  fc.recent.push({id:id, at:now}); if (fc.recent.length > 20) fc.recent.shift();
+  fc.cur = null; fc.revealed = false;
   saveProgress([id]);
   renderCard();
 }
@@ -622,7 +661,8 @@ function undo(){
   if (u.prev) prog.p[u.id] = u.prev; else delete prog.p[u.id];
   // Drop the answer from the log too, if it hasn't been sent yet.
   if (outbox.logs.length === u.logs + 1 && outbox.logs[u.logs].card_id === u.id) outbox.logs.pop();
-  fc.undo = null; fc.cur = u.id; fc.revealed = true; fc.last = null;
+  fc.undo = null; fc.cur = u.id; fc.revealed = true;
+  if (fc.recent.length && fc.recent[fc.recent.length - 1].id === u.id) fc.recent.pop();
   saveProgress([u.id]);
   renderCard();
 }
@@ -774,11 +814,11 @@ function renderList(){
     group.sort(function(a, b){ return a.en.localeCompare(b.en); });
     html += '<h3 class="lvhead">' + LV[lv] + ' <span>' + group.length + ' word' + (group.length === 1 ? "" : "s") + '</span></h3>';
     group.forEach(function(c){
-      var s = state(c.id), cls = !s ? 0 : s.st === 2 ? 2 : s.st === 3 ? 3 : 1;
-      var sub = !s ? "new" : s.st === 2 ? (s.due <= now ? "due now" : "next review " + whenLabel(s.due, now)) : "learning";
-      var label = !s ? "New" : s.st === 2 ? "Learned" : "Learning";
+      var s = state(c.id), st = stageOf(s), cls = STAGE_CLASS[st] || "s0";
+      var label = STAGE_LABEL[st];
+      var sub = st === "new" ? "new" : label.toLowerCase() + (s.st === 2 ? ", " + (s.due <= now ? "due now" : "next review " + whenLabel(s.due, now)) : "") + (isHard(s) ? ", hard word" : "");
       html += '<div class="row" data-id="' + c.id + '"><div class="row-main">' +
-        '<span class="dot s' + cls + '" role="img" aria-label="' + label + '"></span>' +
+        '<span class="dot ' + cls + '" role="img" aria-label="' + label + '"></span>' +
         '<button class="row-en" data-act="open" type="button" aria-expanded="' + (!!openRows[c.id]) + '">' + esc(c.en) + '<small>' + TY[c.ty] + ', ' + sub + (c.mine ? ' · <span class="mine-tag">saved</span>' : "") + '</small></button>' +
         '<div class="row-ar" lang="ar">' + esc(c.ar) + '</div></div>';
       if (openRows[c.id]) {
@@ -893,6 +933,11 @@ document.addEventListener("click", function(e){
   if (a.dataset.act === "subscribe") { e.preventDefault(); subscribe(a); }
   else if (a.dataset.act === "manage") { e.preventDefault(); manage(a); }
   else if (a.dataset.act === "import-open") { e.preventDefault(); openImport(); }
+  else if (a.dataset.act === "practise-hard") {
+    // Show only hard words (the Words filter on the study screen switches back).
+    prefs.source = "hard"; savePrefs(); $("#srcSel").value = "hard"; $("#srcWrap").hidden = false;
+    qz.qs = null; fc.cur = null; location.hash = "#study/" + a.dataset.to;
+  }
 });
 // Back from a successful checkout: the payment webhook usually lands within seconds.
 function waitForMembership(){
@@ -1182,14 +1227,17 @@ function renderHome(){
   for (var lv = 1; lv <= 6; lv++) {
     var total = levelTotal(lv) + mineCount(lv);
     if (!total) continue;
-    var learned = CARDS.filter(function(c){ var s = state(c.id); return c.lv === lv && s && s.st === 2; }).length;
+    var learned = CARDS.filter(function(c){ return c.lv === lv && isKnown(state(c.id)); }).length;
     learnedAll += learned;
     var locked = isLocked(lv);
     html += '<div class="lvl' + (locked ? " locked" : "") + '"><b>' + LV[lv] + '</b><span class="track"><i style="width:' + Math.round(learned / total * 100) + '%"></i></span>' +
       '<span class="n">' + (locked ? (learned ? learned + " · " : "") + "Members" : learned + " / " + total) + '</span></div>';
   }
   $("#levelBars").innerHTML = html;
-  $("#learnedTotal").textContent = learnedAll + " word" + (learnedAll === 1 ? "" : "s") + " learned";
+  var hard = CARDS.filter(function(c){ return isHard(state(c.id)); }).length;
+  $("#hardWords").innerHTML = hard ? '<div class="hard-note"><span><b>' + hard + ' hard word' + (hard === 1 ? "" : "s") + '</b>: forgotten ' + HARD_LAPSES + '+ times. Give ' + (hard === 1 ? "it" : "them") + ' extra practice.</span>' +
+    '<span><button class="btn" data-act="practise-hard" data-to="quiz" type="button">Quiz</button> <button class="btn" data-act="practise-hard" data-to="cards" type="button">Flashcards</button></span></div>' : "";
+  $("#learnedTotal").textContent = learnedAll + " word" + (learnedAll === 1 ? "" : "s") + " known";
 }
 
 /* ---------- screens: home (dashboard) and study (flashcards, quiz, word list) ---------- */
@@ -1220,8 +1268,10 @@ function renderAll(){
   var reader = readerAllowed();
   $("#topSub").hidden = false; updateNav();
   // Saved words only exist once someone has used the Read page.
-  $("#srcWrap").hidden = !reader && !CARDS.some(function(c){ return c.mine; });
-  if ($("#srcWrap").hidden && prefs.source === "mine") { prefs.source = "all"; $("#srcSel").value = "all"; savePrefs(); }
+  var anyMine = CARDS.some(function(c){ return c.mine; }), anyHard = CARDS.some(function(c){ return isHard(state(c.id)); });
+  $("#srcMine").hidden = !reader && !anyMine;
+  $("#srcWrap").hidden = !reader && !anyMine && !anyHard;
+  if (($("#srcWrap").hidden && prefs.source !== "all") || ($("#srcMine").hidden && prefs.source === "mine")) { prefs.source = "all"; $("#srcSel").value = "all"; savePrefs(); }
   $("#total").textContent = summary.length ? summary.reduce(function(n, s){ return n + s.total; }, 0) : CARDS.length;
   renderStairs();
   renderAccount();

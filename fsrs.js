@@ -7,7 +7,9 @@ function makeScheduler(opts) {
            1.4835, 0.0614, 0.2629, 1.6483, 0.6014, 1.8729, 0.5425, 0.0912, 0.0658, 0.1542];
   var DECAY = -W[20], FACTOR = Math.pow(0.9, 1 / DECAY) - 1;
   var RET = opts.retention || 0.9, MAXI = 36500, MIN = 60000;
-  var LEARN = [1 * MIN, 10 * MIN], RELEARN = [10 * MIN];
+  // Learning and relearning steps in minutes. py-fsrs defaults (1m 10m / 10m) unless the app passes its own.
+  var LEARN = (opts.learnSteps || [1, 10]).map(function(m){ return m * MIN; });
+  var RELEARN = (opts.relearnSteps || [10]).map(function(m){ return m * MIN; });
   var elapsed = opts.elapsed, reviewDue = opts.reviewDue, fuzzOn = !!opts.fuzz, rand = opts.random || Math.random;
 
   function pyRound(x) { var f = Math.floor(x), diff = x - f; if (diff > 0.5) return f + 1; if (diff < 0.5) return f; return f % 2 === 0 ? f : f + 1; }

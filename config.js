@@ -15,5 +15,9 @@ window.ARVOCAB_CONFIG = {
   readerAccess: "admin",
   // Natural Arabic audio for the Listen buttons (the "speak" function, SETUP.md step 12d).
   // false = use only the device's own voice.
-  tts: true
+  tts: true,
+  // A word counts as "known" once its memory lasts this many days (Anki calls these "mature").
+  knownDays: 21,
+  // A word forgotten this many times after being learned is flagged as a hard word.
+  hardWordLapses: 6
 };
