@@ -1257,10 +1257,10 @@ function showView(v, mode){
   else renderHome();
   if (changed) window.scrollTo(0, 0);
 }
+// The top bar only has Home (on the study screens); everything else is reached from the home screen's tiles.
 function updateNav(){
   $("#navHome").hidden = view !== "study";
-  $("#navRead").hidden = !readerAllowed();
-  $("#topnav").hidden = $("#navHome").hidden && $("#navRead").hidden;
+  $("#topnav").hidden = $("#navHome").hidden;
 }
 window.addEventListener("hashchange", route);
 
