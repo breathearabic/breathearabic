@@ -162,16 +162,22 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
     <section class="box" aria-labelledby="libTitle">
       <h2 id="libTitle">Reading library</h2>
       <p>Texts for the Read page. Tick "Free" for texts free accounts can read; the rest are for members. Learners tap any word for its meaning and can save it to their flashcards.</p>
+      <p>To make a <strong>book</strong>, give each chapter the same book title and a chapter number. Learners see the book as one item and move through its chapters in order. A free first chapter makes a good taster. Leave the book title empty for a single text.</p>
       <div id="libList"></div>
       <form id="libForm" novalidate style="margin-top:14px;display:grid;gap:8px">
         <input type="hidden" id="libId">
         <div class="form" style="grid-template-columns:3fr 1fr auto auto">
-          <label>Title<input type="text" id="libTitleIn" maxlength="200" placeholder="e.g. A visit to the market"></label>
+          <label>Title (or chapter title)<input type="text" id="libTitleIn" maxlength="200" placeholder="e.g. A visit to the market"></label>
           <label>Level
             <select id="libLevel"><option value="">Any</option><option value="1">A1</option><option value="2">A2</option><option value="3">B1</option><option value="4">B2</option><option value="5">C1</option><option value="6">C2</option></select>
           </label>
           <label class="notify" style="margin:0"><input type="checkbox" id="libFree"> Free</label>
           <label class="notify" style="margin:0"><input type="checkbox" id="libPub" checked> Published</label>
+        </div>
+        <div class="form" style="grid-template-columns:3fr 1fr">
+          <label>Book (optional)<input type="text" id="libBook" maxlength="200" list="libBooks" placeholder="Leave empty for a single text"></label>
+          <label>Chapter<input type="number" id="libChapter" min="0" max="9999" step="1" inputmode="numeric" placeholder="1"></label>
+          <datalist id="libBooks"></datalist>
         </div>
         <label style="font-size:.85rem;color:var(--muted)">Arabic text
           <textarea id="libBody" dir="rtl" lang="ar" maxlength="20000" style="min-height:180px;font-family:var(--ar);font-size:1.2rem;line-height:1.8"></textarea>
@@ -507,31 +513,65 @@ function publish(){
 /* ---------- reading library ---------- */
 var libTexts = [];
 function loadLibrary(){
-  check(sb.from("texts").select("id,title,body,level,is_free,published,sort_order,created_at").is("owner_id", null).order("sort_order").order("created_at")).then(function(r){
+  check(sb.from("texts").select("id,title,body,level,is_free,published,sort_order,created_at,book,chapter").is("owner_id", null).order("sort_order").order("created_at")).then(function(r){
     libTexts = r.data || []; renderLibrary();
   }).catch(function(err){
-    $("#libList").innerHTML = '<p class="msg bad">Couldn\'t load the library: ' + esc(err.message) + '. Have you run supabase/002_reader.sql (SETUP.md)?</p>';
+    $("#libList").innerHTML = '<p class="msg bad">Couldn\'t load the library: ' + esc(err.message) + '. Have you run supabase/002_reader.sql and 004_books.sql (SETUP.md)?</p>';
   });
 }
+function libBookNames(){
+  var seen = {}, out = [];
+  libTexts.forEach(function(t){ if (t.book && !seen[t.book]) { seen[t.book] = 1; out.push(t.book); } });
+  return out;
+}
+function libChapters(book){
+  return libTexts.filter(function(t){ return t.book === book; })
+    .sort(function(a, b){ return (a.chapter == null ? 1e9 : a.chapter) - (b.chapter == null ? 1e9 : b.chapter) || a.sort_order - b.sort_order; });
+}
+function nextChapter(book){
+  var n = 0; libChapters(book).forEach(function(c){ if (c.chapter != null && c.chapter > n) n = c.chapter; });
+  return n + 1;
+}
 function renderLibrary(){
+  $("#libBooks").innerHTML = libBookNames().map(function(b){ return '<option value="' + esc(b) + '">'; }).join("");
   if (!libTexts.length) { $("#libList").innerHTML = '<p class="msg">No texts yet. Add the first one below.</p>'; return; }
-  $("#libList").innerHTML = '<div class="tablewrap"><table><thead><tr><th>Title</th><th>Level</th><th>Access</th><th>Words</th><th></th></tr></thead><tbody>' +
-    libTexts.map(function(t){
-      var words = (t.body.match(/[ء-ي]+/g) || []).length;
-      return '<tr><td>' + esc(t.title) + (t.published ? "" : ' <span class="tag">hidden</span>') + '</td><td>' + (t.level ? LV[t.level] : "") + '</td>' +
-        '<td><span class="tag ' + (t.is_free ? "active" : "comp") + '">' + (t.is_free ? "Free" : "Members") + '</span></td><td>' + words + '</td>' +
-        '<td><button class="btn small" data-libedit="' + t.id + '" type="button">Edit</button> <button class="btn small" data-libdel="' + t.id + '" type="button">Delete</button></td></tr>';
-    }).join("") + '</tbody></table></div>';
+  function row(t, inBook){
+    var words = (t.body.match(/[ء-ي]+/g) || []).length;
+    return '<tr><td>' + (inBook ? '<span style="color:var(--muted)">&nbsp;&nbsp;' + (t.chapter != null ? "Ch. " + t.chapter + " · " : "") + '</span>' : "") + esc(t.title) +
+      (t.published ? "" : ' <span class="tag">hidden</span>') + '</td><td>' + (t.level ? LV[t.level] : "") + '</td>' +
+      '<td><span class="tag ' + (t.is_free ? "active" : "comp") + '">' + (t.is_free ? "Free" : "Members") + '</span></td><td>' + words + '</td>' +
+      '<td><button class="btn small" data-libedit="' + t.id + '" type="button">Edit</button> <button class="btn small" data-libdel="' + t.id + '" type="button">Delete</button></td></tr>';
+  }
+  var html = "", done = {};
+  libTexts.forEach(function(t){
+    if (!t.book) { html += row(t, false); return; }
+    if (done[t.book]) return; done[t.book] = 1;
+    var ch = libChapters(t.book);
+    html += '<tr><td colspan="4"><strong>📖 ' + esc(t.book) + '</strong> <span style="color:var(--muted)">· ' + ch.length + ' chapter' + (ch.length === 1 ? "" : "s") + '</span></td>' +
+      '<td><button class="btn small" data-libaddch="' + esc(t.book) + '" type="button">Add chapter</button></td></tr>';
+    html += ch.map(function(c){ return row(c, true); }).join("");
+  });
+  $("#libList").innerHTML = '<div class="tablewrap"><table><thead><tr><th>Title</th><th>Level</th><th>Access</th><th>Words</th><th></th></tr></thead><tbody>' + html + '</tbody></table></div>';
 }
 function resetLibForm(){
   $("#libId").value = ""; $("#libTitleIn").value = ""; $("#libLevel").value = ""; $("#libFree").checked = false; $("#libPub").checked = true; $("#libBody").value = "";
+  $("#libBook").value = ""; $("#libChapter").value = "";
   $("#libSave").textContent = "Add text"; $("#libCancel").hidden = true;
 }
 $("#libList").addEventListener("click", function(e){
-  var ed = e.target.closest("[data-libedit]"), del = e.target.closest("[data-libdel]");
+  var ed = e.target.closest("[data-libedit]"), del = e.target.closest("[data-libdel]"), add = e.target.closest("[data-libaddch]");
+  if (add) {
+    resetLibForm();
+    var book = add.dataset.libaddch, prev = libChapters(book).slice(-1)[0];
+    $("#libBook").value = book; $("#libChapter").value = nextChapter(book);
+    if (prev) $("#libLevel").value = prev.level || "";
+    $("#libTitleIn").focus(); $("#libForm").scrollIntoView({behavior:"smooth", block:"center"});
+    return;
+  }
   if (ed) {
     var t = libTexts.filter(function(x){ return x.id === ed.dataset.libedit; })[0]; if (!t) return;
     $("#libId").value = t.id; $("#libTitleIn").value = t.title; $("#libLevel").value = t.level || ""; $("#libFree").checked = t.is_free; $("#libPub").checked = t.published; $("#libBody").value = t.body;
+    $("#libBook").value = t.book || ""; $("#libChapter").value = t.chapter != null ? t.chapter : "";
     $("#libSave").textContent = "Save changes"; $("#libCancel").hidden = false; $("#libTitleIn").focus();
   }
   if (del && confirm("Delete this text? Learners' saved words from it stay in their flashcards.")) {
@@ -539,14 +579,22 @@ $("#libList").addEventListener("click", function(e){
   }
 });
 $("#libCancel").addEventListener("click", resetLibForm);
+// Picking an existing book fills in its next chapter number.
+$("#libBook").addEventListener("change", function(){
+  var book = $("#libBook").value.trim();
+  if (book && !$("#libId").value && $("#libChapter").value === "") $("#libChapter").value = nextChapter(book);
+});
 $("#libForm").addEventListener("submit", function(e){
   e.preventDefault();
   var id = $("#libId").value, title = $("#libTitleIn").value.trim(), body = $("#libBody").value.trim();
   if (!title || !/[ء-ي]/.test(body)) return setMsg($("#libMsg"), "Add a title and some Arabic text.", "bad");
-  var row = {title:title, body:body, level:$("#libLevel").value ? +$("#libLevel").value : null, is_free:$("#libFree").checked, published:$("#libPub").checked, updated_at:new Date().toISOString()};
+  var book = $("#libBook").value.trim().replace(/\s+/g, " ") || null, chRaw = $("#libChapter").value.trim();
+  var chapter = book ? (chRaw === "" ? nextChapter(book) : Math.max(0, Math.min(9999, Math.round(+chRaw) || 0))) : null;
+  var row = {title:title, body:body, level:$("#libLevel").value ? +$("#libLevel").value : null, is_free:$("#libFree").checked, published:$("#libPub").checked,
+    book:book, chapter:chapter, updated_at:new Date().toISOString()};
   setMsg($("#libMsg"), "Saving…");
   var q = id ? sb.from("texts").update(row).eq("id", id) : sb.from("texts").insert(Object.assign({owner_id:null, sort_order:libTexts.length * 10}, row));
-  check(q).then(function(){ setMsg($("#libMsg"), id ? "Saved." : "Added. Learners see it on the Read page.", "ok"); resetLibForm(); loadLibrary(); })
+  check(q).then(function(){ setMsg($("#libMsg"), id ? "Saved." : (book ? "Chapter " + chapter + " added to " + book + "." : "Added. Learners see it on the Read page."), "ok"); resetLibForm(); loadLibrary(); })
     .catch(function(err){ setMsg($("#libMsg"), "Couldn't save: " + err.message, "bad"); });
 });
 

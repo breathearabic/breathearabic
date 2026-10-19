@@ -5,7 +5,7 @@ var LV = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
 var TY = {n:"noun", v:"verb", a:"adjective", d:"adverb", p:"phrase", r:"particle"};
 var CARDS = [], byId = new Map();
 var $ = function(s){ return document.querySelector(s); };
-var DAY = 86400000, MINUTE = 60000, ROLLOVER = 4, LEARN_AHEAD = 20 * MINUTE;
+var DAY = 86400000, MINUTE = 60000, ROLLOVER = 4;
 var PAGE = 1000;
 
 function esc(s){ return String(s).replace(/[&<>"']/g, function(ch){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]; }); }
@@ -303,8 +303,8 @@ function queueInfo(now){
   return {pool:p, learnDue:learnDue, learnLater:learnLater, revDue:revDue, fresh:fresh, newShown:Math.min(newLeft, fresh.length), newLeft:newLeft, learned:learned, learning:learning};
 }
 /* Spacing: a word you've just answered sits out until SPACING other cards have been shown (or RECENT_MS
-   has passed), so you never see the same word back-to-back. Learning words are only shown early when
-   there's nothing else at all, and never straight after themselves. */
+   has passed), so you never see the same word back-to-back. Learning words always wait out their full
+   step (10 minutes, then an hour): they're never shown early, so refreshing can't skip the wait. */
 var SPACING = 5, RECENT_MS = 10 * MINUTE;
 function recentIds(now){ return fc.recent.filter(function(r){ return now - r.at < RECENT_MS; }).slice(-SPACING).map(function(r){ return r.id; }); }
 function pickNext(now){
@@ -312,8 +312,7 @@ function pickNext(now){
   var fresh = function(c){ return recent.indexOf(c.id) < 0; };
   var due = q.learnDue.concat(q.revDue).sort(function(a, b){ return state(a.id).due - state(b.id).due; });
   var news = q.newShown ? q.fresh.slice(0, q.newShown) : [];
-  var ahead = q.learnLater.filter(function(c){ return state(c.id).due <= now + LEARN_AHEAD && fresh(c); });
-  var pick = due.filter(fresh)[0] || news.filter(fresh)[0] || ahead[0];
+  var pick = due.filter(fresh)[0] || news.filter(fresh)[0];
   if (pick) return pick.id;
   // Only words seen a few cards ago are left. One that's actually due may come back now:
   // the one seen longest ago, to keep repeats as far apart as possible.
@@ -321,16 +320,10 @@ function pickNext(now){
   var lastSeen = function(c){ var r = fc.recent.filter(function(x){ return x.id === c.id; }).pop(); return r ? r.at : 0; };
   return due.slice().sort(function(a, b){ return lastSeen(a) - lastSeen(b); })[0].id;
 }
-// When the next learning word becomes available (due, or early once it's no longer "just seen").
+// When the next learning word becomes due.
 function nextAvailableAt(now){
-  var q = queueInfo(now), best = Infinity;
-  q.learnLater.forEach(function(c){
-    var due = state(c.id).due, early = due - LEARN_AHEAD;
-    var seen = fc.recent.filter(function(r){ return r.id === c.id; }).pop();
-    if (seen) early = Math.max(early, seen.at + RECENT_MS);
-    best = Math.min(best, Math.min(due, early));
-  });
-  return best;
+  var q = queueInfo(now);
+  return q.learnLater.length ? state(q.learnLater[0].id).due : Infinity;
 }
 
 /* ---------- staircase ---------- */

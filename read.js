@@ -169,6 +169,55 @@ function loadRemote(){
   });
 }
 
+/* ---------- books: library texts sharing a book title, one chapter each ---------- */
+var readDone = {};
+function chaptersOf(book){
+  return library.filter(function(t){ return t.book === book; }).map(function(t, i){ return {t:t, i:i}; })
+    .sort(function(a, b){ return (a.t.chapter == null ? 1e9 : a.t.chapter) - (b.t.chapter == null ? 1e9 : b.t.chapter) || a.i - b.i; })
+    .map(function(x){ return x.t; });
+}
+function levelRange(list){
+  var lv = list.map(function(t){ return t.level; }).filter(Boolean);
+  if (!lv.length) return "";
+  var lo = Math.min.apply(null, lv), hi = Math.max.apply(null, lv);
+  return lo === hi ? LV[lo] : LV[lo] + "–" + LV[hi];
+}
+function libEntry(id){ return library.filter(function(t){ return t.id === id; })[0] || null; }
+function chLabel(c, n){ return "Chapter " + (c.chapter != null ? c.chapter : n); }
+function markRead(id){ if (!readDone[id]) { readDone[id] = 1; lsSet(ukey("read-done"), readDone); } }
+function renderBook(book){
+  closePop();
+  var ch = chaptersOf(book), free = !hasAccess();
+  if (!ch.length) { main.innerHTML = '<div class="panel"><p>That book isn\'t available.</p><div class="row"><button class="btn" data-act="home" type="button">Back to texts</button></div></div>'; return; }
+  var next = ch.filter(function(c){ return readable.has(c.id) && !readDone[c.id]; })[0];
+  var html = '<div class="reader-head"><button class="btn small" data-act="home" type="button">← Texts</button><h2>📖 ' + esc(book) + '</h2><span></span></div>';
+  html += '<div class="panel"><p>' + ch.length + ' chapter' + (ch.length === 1 ? "" : "s") + (levelRange(ch) ? " · " + levelRange(ch) : "") + '</p>';
+  if (next) html += '<div class="row" style="margin:0 0 12px"><button class="btn primary" data-text="' + next.id + '" type="button">' +
+    (ch.some(function(c){ return readDone[c.id]; }) ? "Continue: " : "Start: ") + esc(chLabel(next, ch.indexOf(next) + 1)) + '</button></div>';
+  html += '<div class="list">';
+  ch.forEach(function(c, i){
+    var open = readable.has(c.id);
+    html += '<button class="item' + (open ? "" : " locked") + '" data-text="' + c.id + '" type="button"><span><small>' + esc(chLabel(c, i + 1)) + '</small><br><span class="t">' + esc(c.title) + '</span>' +
+      (c.level ? ' <small>' + LV[c.level] + '</small>' : "") + '</span>' +
+      (!open ? '<span class="tag">Members</span>' : readDone[c.id] ? '<span class="tag free">✓ Read</span>' : c.is_free && free ? '<span class="tag free">Free</span>' : "") + '</button>';
+  });
+  html += '</div></div>';
+  if (free && ch.some(function(c){ return !readable.has(c.id); }))
+    html += '<div class="panel"><p>The rest of this book is for members.</p><div class="row" style="margin-top:0"><button class="btn primary small" data-act="subscribe" type="button">Subscribe' + (CFG.priceLabel ? " · " + esc(CFG.priceLabel) : "") + '</button></div></div>';
+  main.innerHTML = html;
+}
+// Previous / next chapter buttons under a chapter.
+function chapterNav(id){
+  var e = libEntry(id); if (!e || !e.book) return "";
+  var ch = chaptersOf(e.book), i = ch.indexOf(e), prev = ch[i - 1], next = ch[i + 1];
+  var html = '<div class="chnav">';
+  html += prev ? '<button class="btn" data-text="' + prev.id + '" type="button">← ' + esc(chLabel(prev, i)) + '</button>' : '<span></span>';
+  if (!next) html += '<button class="btn" data-book="' + esc(e.book) + '" type="button">Finished · back to the book</button>';
+  else if (readable.has(next.id)) html += '<button class="btn primary" data-text="' + next.id + '" type="button">' + esc(chLabel(next, i + 2)) + ' →</button>';
+  else html += '<button class="btn primary" data-act="subscribe" type="button">' + esc(chLabel(next, i + 2)) + ' is for members · Subscribe</button>';
+  return html + '</div>';
+}
+
 /* ---------- library and own texts ---------- */
 function renderHome(){
   closePop();
@@ -179,11 +228,21 @@ function renderHome(){
     '<div class="row" style="margin-top:0"><button class="btn primary small" data-act="subscribe" type="button">Subscribe' + (CFG.priceLabel ? " · " + esc(CFG.priceLabel) : "") + '</button></div></div>';
   html += '<div class="panel"><h2>Library</h2><p>Texts chosen for learners, by level.</p><div class="list">';
   if (!library.length) html += '<p class="msg">No texts yet. Check back soon.</p>';
+  var shownBooks = {};
   library.forEach(function(t){
-    var open = readable.has(t.id);
-    html += '<button class="item' + (open ? "" : " locked") + '" data-text="' + t.id + '" type="button"><span><span class="t">' + esc(t.title) + '</span>' +
+    if (t.book) {
+      if (shownBooks[t.book]) return; shownBooks[t.book] = 1;
+      var ch = chaptersOf(t.book), open = ch.filter(function(c){ return readable.has(c.id); }).length;
+      var done = ch.filter(function(c){ return readDone[c.id]; }).length;
+      html += '<button class="item' + (open ? "" : " locked") + '" data-book="' + esc(t.book) + '" type="button"><span><span class="t">📖 ' + esc(t.book) + '</span>' +
+        ' <small>' + ch.length + ' chapter' + (ch.length === 1 ? "" : "s") + (levelRange(ch) ? " · " + levelRange(ch) : "") + (done ? " · " + done + " read" : "") + '</small></span>' +
+        (!open ? '<span class="tag">Members</span>' : open < ch.length && free ? '<span class="tag free">Free taster</span>' : "") + '</button>';
+      return;
+    }
+    var isOpen = readable.has(t.id);
+    html += '<button class="item' + (isOpen ? "" : " locked") + '" data-text="' + t.id + '" type="button"><span><span class="t">' + esc(t.title) + '</span>' +
       (t.level ? ' <small>' + LV[t.level] + '</small>' : "") + '</span>' +
-      (open ? (t.is_free && free ? '<span class="tag free">Free</span>' : "") : '<span class="tag">Members</span>') + '</button>';
+      (isOpen ? (t.is_free && free ? '<span class="tag free">Free</span>' : "") : '<span class="tag">Members</span>') + '</button>';
   });
   html += '</div></div>';
   html += '<div class="panel paste"><h2>Read your own text</h2><p>Paste any Arabic text: an article, a hadith, your lesson notes. It\'s saved privately to your account.</p>' +
@@ -201,6 +260,8 @@ function renderHome(){
   main.innerHTML = html;
 }
 main.addEventListener("click", function(e){
+  var b = e.target.closest("[data-book]");
+  if (b) { location.hash = "b=" + encodeURIComponent(b.dataset.book); return; }
   var t = e.target.closest("[data-text]");
   if (t) {
     var id = t.dataset.text;
@@ -249,7 +310,7 @@ function getText(id){
 
 /* ---------- the reader ---------- */
 var sentences = [];
-function renderText(t){
+function renderText(t, tid){
   closePop();
   if (!t) { main.innerHTML = '<div class="panel"><p>That text isn\'t available. It may be for members only, or deleted.</p><div class="row"><button class="btn" data-act="home" type="button">Back to texts</button></div></div>'; return; }
   sentences = [""];
@@ -270,11 +331,14 @@ function renderText(t){
     });
     html += "</p>"; si++; sentences[si] = "";
   });
-  var free = !hasAccess();
-  main.innerHTML = '<div class="reader-head"><button class="btn small" data-act="home" type="button">← Texts</button><h2>' + esc(t.title) + '</h2>' +
+  var free = !hasAccess(), entry = tid ? libEntry(tid) : null, book = entry && entry.book;
+  var back = book ? '<button class="btn small" data-book="' + esc(book) + '" type="button">← ' + esc(book) + '</button>' : '<button class="btn small" data-act="home" type="button">← Texts</button>';
+  var heading = book ? '<small style="display:block;color:var(--muted);font-family:var(--ui);font-size:.8rem;font-weight:600">' + esc(chLabel(entry, chaptersOf(book).indexOf(entry) + 1)) + '</small>' : "";
+  main.innerHTML = '<div class="reader-head">' + back + '<h2>' + heading + esc(t.title) + '</h2>' +
     '<span class="allow" id="allow">' + (free && allowance != null ? allowance + " free lookups left today" : "") + '</span></div>' +
     '<div class="text" id="text" lang="ar" dir="rtl">' + html + '</div>' +
-    '<div class="legend"><span><i style="border-color:var(--known)"></i>Known</span><span><i style="border-color:color-mix(in srgb,var(--known) 50%,transparent)"></i>Young</span><span><i style="border-color:var(--learning)"></i>Learning</span><span><i style="border-color:var(--lapis)"></i>Saved</span><span>Tap a word. For several, drag across them (on a phone, hold a moment first).</span></div>';
+    '<div class="legend"><span><i style="border-color:var(--known)"></i>Known</span><span><i style="border-color:color-mix(in srgb,var(--known) 50%,transparent)"></i>Young</span><span><i style="border-color:var(--learning)"></i>Learning</span><span><i style="border-color:var(--lapis)"></i>Saved</span><span>Tap a word. For several, drag across them (on a phone, hold a moment first).</span></div>' +
+    (tid ? chapterNav(tid) : "");
 }
 function refreshUnderlines(){
   document.querySelectorAll("#text .w").forEach(function(el){
@@ -508,13 +572,20 @@ function toast(msg){
 
 /* ---------- routing ---------- */
 function route(){
+  window.scrollTo(0, 0);
+  var bm = /^#b=(.+)$/.exec(location.hash);
+  if (bm) { var name = ""; try { name = decodeURIComponent(bm[1]); } catch (e) {} renderBook(name); return; }
   var m = /^#t=([\w-]+)$/.exec(location.hash);
   if (m) {
     main.innerHTML = '<div class="panel"><p>Loading the text…</p></div>';
     getText(m[1]).then(function(t){
       // Remember it for "Continue reading" on the home screen.
-      if (t && m[1] !== "draft") lsSet(ukey("last-text"), {id:m[1], title:t.title});
-      renderText(t);
+      var entry = libEntry(m[1]);
+      if (t && m[1] !== "draft") {
+        lsSet(ukey("last-text"), {id:m[1], title:entry && entry.book ? entry.book + " · " + t.title : t.title});
+        if (entry && entry.book) markRead(m[1]);
+      }
+      renderText(t, m[1]);
     });
   } else renderHome();
 }
@@ -534,11 +605,18 @@ sb.auth.getSession().then(function(r){
   if (!shown) main.innerHTML = '<div class="panel"><p>Loading…</p></div>';
   var idx = lsGet(ukey("read-index"));
   if (idx) { library = idx.library || []; readable = new Set(idx.readable || []); mine = idx.mine || []; }
+  readDone = lsGet(ukey("read-done")) || {};
   if (shown) route();
   loadRemote().then(function(){
     if (!readerAllowed()) { location.replace("./"); return; }
     if (!shown) route();
-    else if (!/^#t=/.test(location.hash)) renderHome(); else refreshUnderlines();
+    else if (/^#b=/.test(location.hash)) route();
+    else if (!/^#t=/.test(location.hash)) renderHome(); else {
+      // A chapter opened before the library list had loaded: show it again with its book and chapter buttons.
+      var nav = document.querySelector(".chnav"), m = /^#t=([\w-]+)$/.exec(location.hash), entry = m && libEntry(m[1]);
+      if (entry && entry.book && !nav) route();
+      else { refreshUnderlines(); if (nav && m) nav.outerHTML = chapterNav(m[1]); }
+    }
   }).catch(function(err){ console.warn(err); if (!idx) main.innerHTML = '<div class="panel"><p>Couldn\'t load. Check your connection and reload.</p></div>'; });
 });
 })();
