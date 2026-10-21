@@ -56,7 +56,7 @@ function ukey(k){ return "arvocab-u:" + user.id + ":" + k; }
 
 /* ---------- preferences and progress ---------- */
 var PREF_KEY = "arvocab-prefs-v1", LEGACY_PROG_KEY = "arvocab-progress-v1", LEGACY_SYNC_KEY = "arvocab-sync-url";
-var prefs = Object.assign({levels:[1,2,3,4,5,6], mode:"cards", type:"all", dir:"ar", qlen:10, newPerDay:20, extra:null}, lsGet(PREF_KEY) || {});
+var prefs = Object.assign({deck:"main", levels:[1,2,3,4,5,6], mode:"cards", type:"all", dir:"ar", qlen:10, newPerDay:20, extra:null}, lsGet(PREF_KEY) || {});
 prefs.levels = (prefs.levels || []).filter(function(l){ return l >= 1 && l <= 6; });
 if (!prefs.levels.length || !prefs.allLevelsDefault) { prefs.levels = [1,2,3,4,5,6]; prefs.allLevelsDefault = true; lsSet(PREF_KEY, prefs); }
 function savePrefs(){ lsSet(PREF_KEY, prefs); }
@@ -163,7 +163,7 @@ function check(q){ return q.then(function(r){ if (r.error) throw r.error; return
 function isAuthError(e){ return e && (e.code === "PGRST301" || e.status === 401 || /JWT/i.test(e.message || "")); }
 
 /* ---------- loading from the cloud ---------- */
-function toCard(r){ return {id:r.id, ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, ex:Array.isArray(r.examples) ? r.examples : [], so:r.sort_order, free:r.is_free}; }
+function toCard(r){ return {id:r.id, deck:r.deck || "main", ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, ex:Array.isArray(r.examples) ? r.examples : [], so:r.sort_order, free:r.is_free}; }
 function setCards(list){
   // Words saved on the Read page have ids starting "u-".
   list.forEach(function(c){ c.mine = /^u-/.test(c.id); });
@@ -184,7 +184,7 @@ function fetchAll(table, cols, order){
 function loadRemote(){
   var uid = user.id;
   return Promise.all([
-    fetchAll("cards", "id,level,word_type,arabic,english,examples,sort_order,is_free", "sort_order"),
+    fetchAll("cards", "id,deck,level,word_type,arabic,english,examples,sort_order,is_free", "sort_order"),
     fetchAll("progress", "card_id,state", "card_id"),
     check(sb.from("memberships").select("*").eq("user_id", uid).maybeSingle()),
     check(sb.from("profiles").select("id,email,display_name,role").eq("id", uid).maybeSingle()),
@@ -204,7 +204,7 @@ function loadRemote(){
     serverProgressCount = res[1].length;
     member = res[2].data || null;
     profile = res[3].data || null;
-    summary = (res[4].data || []).map(function(s){ return {level:+s.level, total:+s.total, free:+s.free}; });
+    summary = (res[4].data || []).map(function(s){ return {deck:s.deck || "main", level:+s.level, total:+s.total, free:+s.free}; });
     lsSet(ukey("cards"), CARDS);
     lsSet(ukey("member"), member);
     lsSet(ukey("profile"), profile);
@@ -256,10 +256,14 @@ function hasAccess(){
   return false;
 }
 // Deck counts leave out the learner's own saved words (from the Read page).
-function deckVisible(lv){ return CARDS.filter(function(c){ return c.lv === lv && !c.mine; }).length; }
-function mineCount(lv){ return CARDS.filter(function(c){ return c.lv === lv && c.mine; }).length; }
+// Two decks: the main vocabulary and the Islamic terms. Everything below works on the chosen one.
+var DECKS = {main:{name:"Arabic vocabulary", sub:"Everyday Classical Arabic, A1 to C2"}, islamic:{name:"Quran and Islamic terms", sub:"The Quran's 300 most common words, then aqidah, fiqh, seerah and character. Free"}};
+function inDeck(c){ return (c.deck || "main") === prefs.deck; }
+function deckVisible(lv){ return CARDS.filter(function(c){ return c.lv === lv && !c.mine && inDeck(c); }).length; }
+function mineCount(lv){ return CARDS.filter(function(c){ return c.lv === lv && c.mine && inDeck(c); }).length; }
+function deckSize(d){ var n = summary.filter(function(x){ return (x.deck || "main") === d; }).reduce(function(a, x){ return a + x.total; }, 0); return n || CARDS.filter(function(c){ return (c.deck || "main") === d && !c.mine; }).length; }
 function levelTotal(lv){
-  var s = summary.filter(function(x){ return x.level === lv; })[0];
+  var s = summary.filter(function(x){ return x.level === lv && (x.deck || "main") === prefs.deck; })[0];
   return Math.max(s ? s.total : 0, deckVisible(lv));
 }
 // A level is locked when the deck has words there that this account can't see.
@@ -276,7 +280,7 @@ function typeOk(c){
   if (prefs.type === "other") return c.ty === "d" || c.ty === "r";
   return c.ty === prefs.type;
 }
-function pool(){ return CARDS.filter(function(c){ return prefs.levels.indexOf(c.lv) > -1 && typeOk(c) && sourceOk(c); }); }
+function pool(){ return CARDS.filter(function(c){ return inDeck(c) && prefs.levels.indexOf(c.lv) > -1 && typeOk(c) && sourceOk(c); }); }
 function levelNames(){ return prefs.levels.slice().sort().map(function(l){ return LV[l]; }); }
 function levelLabel(cap){ return prefs.levels.length >= 6 ? (cap ? "All levels" : "all levels") : joinNames(levelNames()); }
 function joinNames(a){ return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
@@ -1257,6 +1261,9 @@ function renderHome(){
     : "";
 
   if (!CARDS.length) return;
+  if (!DECKS[prefs.deck]) prefs.deck = "main";
+  $("#todayDeck").textContent = DECKS[prefs.deck].name;
+  $("#tileIslamicSub").textContent = deckSize("islamic") + " free words: the Quran's most common, plus Islamic terms";
   var q = queueInfo(now);
   var due = q.learnDue.length + q.revDue.length, fresh = q.newShown, learning = q.learnDue.length + q.learnLater.length;
   $("#todayStats").innerHTML =
@@ -1319,6 +1326,39 @@ function renderHome(){
 
 /* ---------- screens: home (dashboard) and study (flashcards, quiz, word list) ---------- */
 var view = "home";
+/* Choosing a deck: pressing study on the home screen asks which deck, unless the link already names one. */
+var pendingStudy = null;
+function chooseDeck(hash){
+  pendingStudy = hash;
+  var box = $("#deckChooser");
+  box.querySelectorAll("[data-deck]").forEach(function(b){
+    var d = b.dataset.deck;
+    b.classList.toggle("current", d === prefs.deck);
+    b.querySelector("small").textContent = DECKS[d].sub + " · " + deckSize(d) + " words";
+  });
+  box.hidden = false;
+  box.querySelector("[data-deck='" + prefs.deck + "']").focus();
+}
+function closeChooser(){ $("#deckChooser").hidden = true; pendingStudy = null; }
+function setDeck(d){
+  if (prefs.deck === d) return;
+  prefs.deck = d; prefs.source = "all"; fc.cur = null; fc.revealed = false; fc.undo = null; savePrefs();
+}
+document.addEventListener("click", function(e){
+  var a = e.target.closest("#home a[href^='#study']");
+  if (a) {
+    e.preventDefault();
+    if (a.dataset.deck) { setDeck(a.dataset.deck); location.hash = a.getAttribute("href"); }
+    else chooseDeck(a.getAttribute("href"));
+    return;
+  }
+  var pick = e.target.closest("#deckChooser [data-deck]");
+  if (pick) { var h = pendingStudy || "#study/cards"; setDeck(pick.dataset.deck); closeChooser(); if (location.hash === h) route(); else location.hash = h; return; }
+  if (e.target.closest("[data-act=close-chooser]") || e.target.id === "deckChooser") closeChooser();
+  if (e.target.closest("[data-act=switch-deck]")) { e.preventDefault(); chooseDeck(location.hash || "#study/cards"); }
+});
+document.addEventListener("keydown", function(e){ if (e.key === "Escape" && !$("#deckChooser").hidden) closeChooser(); });
+
 function route(){
   if (!user) return;
   var m = /^#study(?:\/(cards|quiz|list))?$/.exec(location.hash);
@@ -1330,7 +1370,7 @@ function showView(v, mode){
   $("#home").hidden = v !== "home";
   $("#study").hidden = v !== "study";
   updateNav();
-  if (v === "study") setMode(mode || prefs.mode);
+  if (v === "study") { $("#deckName").textContent = DECKS[prefs.deck].name; setMode(mode || prefs.mode); }
   else renderHome();
   if (changed) window.scrollTo(0, 0);
 }

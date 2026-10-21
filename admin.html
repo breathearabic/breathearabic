@@ -357,7 +357,7 @@ $("#checkSheet").addEventListener("click", function(){
   check(sb.from("app_settings").upsert({key:"sheet_deck_url", value:url, updated_at:new Date().toISOString()})).catch(function(){});
   Promise.all([
     fetch(url + "?action=deck", {cache:"no-store"}).then(function(r){ return r.json(); }),
-    fetchAll("cards", "id,level,word_type,arabic,english,examples,sort_order,is_free,is_active", "sort_order"),
+    fetchAll("cards", "id,deck,level,word_type,arabic,english,examples,sort_order,is_free,is_active", "sort_order"),
     fetchAll("deck_skips", "arabic,note", "arabic")
   ]).then(function(res){
     var sheet = res[0];
@@ -376,6 +376,7 @@ function col(header, names, fallback){
   return fallback;
 }
 function buildReview(sheet, cards, skips){
+  cards = cards.filter(function(c){ return (c.deck || "main") === "main"; });   // the Islamic deck is not in the sheet
   var header = sheet.header || [];
   var iType = col(header, ["type"], 1), iTerm = col(header, ["term", "word", "arabic"], 2), iSent = col(header, ["used in a sentence", "sentence", "example"], 3), iTr = col(header, ["translation", "english"], 4);
   var first = sheet.firstRow || 2;

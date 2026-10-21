@@ -391,6 +391,16 @@ footer p{margin:0;max-width:62ch}
 .bars i{display:block;flex:1;border-radius:3px 3px 1px 1px;background:var(--known);min-height:3px}
 .bars i.zero{background:var(--step)}
 .bars i.now{background:var(--lapis)} .bars i.now.zero{background:color-mix(in srgb,var(--lapis) 35%,transparent)}
+.deck-tag{font-size:.8rem;font-weight:600;color:var(--lapis);background:var(--lapis-soft);border-radius:999px;padding:2px 10px;margin-left:6px;vertical-align:middle}
+.deck-line{margin:0 0 10px;font-size:.9rem;color:var(--muted)}
+.chooser{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px}
+.chooser[hidden]{display:none}
+.chooser-box{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px;width:min(420px,100%);display:grid;gap:10px;text-align:center}
+.chooser-box h2{margin:0 0 4px;font-size:1.2rem}
+.deck-pick{display:grid;gap:3px;text-align:left;background:var(--paper);border:1.5px solid var(--line);border-radius:14px;padding:14px 16px;color:var(--ink)}
+.deck-pick b{font-size:1.05rem}
+.deck-pick small{color:var(--muted);font-size:.85rem}
+.deck-pick.current{border-color:var(--lapis)}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:0 0 14px}
 .tile{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;text-decoration:none;color:var(--ink);transition:border-color .15s}
 .tile:hover{border-color:var(--lapis)}
@@ -508,7 +518,7 @@ footer p{margin:0;max-width:62ch}
     <p class="greet"><span lang="ar" dir="rtl" class="ar-greet">السلام عليكم</span> <span id="greetDate"></span></p>
     <div id="homeImport"></div>
     <section class="today" aria-labelledby="todayTitle">
-      <div class="today-head"><h2 id="todayTitle">Today</h2><span id="todayEta" class="muted"></span></div>
+      <div class="today-head"><h2 id="todayTitle">Today <small class="deck-tag" id="todayDeck"></small></h2><span id="todayEta" class="muted"></span></div>
       <div class="today-stats" id="todayStats"></div>
       <div class="today-cta" id="todayCta"></div>
     </section>
@@ -523,6 +533,7 @@ footer p{margin:0;max-width:62ch}
       <a class="tile" href="#study/cards"><span class="tile-ico" aria-hidden="true">▤</span><span><b>Review</b><small>What's due today, plus new words</small></span></a>
       <a class="tile" href="#study/quiz"><span class="tile-ico" aria-hidden="true">✓</span><span><b>Quiz</b><small>Multiple choice on any level</small></span></a>
       <a class="tile" href="#study/list"><span class="tile-ico" aria-hidden="true">≣</span><span><b>Word list</b><small>Search every word and its memory</small></span></a>
+      <a class="tile" href="#study/cards" data-deck="islamic" id="tileIslamic"><span class="tile-ico ar" aria-hidden="true">قرآن</span><span><b>Quran and Islamic terms</b><small id="tileIslamicSub">Aqidah, fiqh, seerah and character</small></span></a>
       <a class="tile" href="read" id="tileRead" hidden><span class="tile-ico ar" aria-hidden="true">اقرأ</span><span><b>Read</b><small id="tileReadSub">Tap any word for its meaning</small></span></a>
       <a class="tile" href="admin" id="tileAdmin" hidden><span class="tile-ico" aria-hidden="true">⚙</span><span><b>Admin</b><small>Members, gifts, deck and library</small></span></a>
     </nav>
@@ -550,6 +561,7 @@ footer p{margin:0;max-width:62ch}
 
   <!-- ===== Study: flashcards, quiz, word list ===== -->
   <div id="study" hidden>
+  <p class="deck-line">Deck: <b id="deckName"></b> · <a href="#" data-act="switch-deck">Switch deck</a></p>
   <section aria-label="Choose levels">
     <div class="stairs" id="stairs"></div>
     <div class="levels-meta"><span id="levelSummary" aria-live="polite"></span><button class="link" id="allBtn" type="button">Select all levels</button></div>
@@ -611,10 +623,19 @@ footer p{margin:0;max-width:62ch}
   <footer>
     <p>Words come up in order of when they're due, oldest first, whatever their level, and the same word never comes back until a few others have been shown. New words are added in deck order and come back after 10 minutes and then an hour while you're learning them. Reviews are scheduled with FSRS, the memory model Anki uses, with two buttons like a pass/fail setup. Each time you remember a word, its memory gets stronger and the next review moves further out; each time you forget it, it goes back to learning. A word counts as <b>known</b> once its memory lasts three weeks, which usually takes three or four correct answers spread over a couple of weeks. A word forgotten six times becomes a <b>hard word</b>, which you can practise on its own. A new study day starts at 4am.</p>
     <p>The levels are estimates for learners of Classical Arabic, based on how common each word is in the Quran, hadith and classical texts, and how abstract it is.</p>
+    <p>The Quran's 300 most common words (in the Quran and Islamic terms deck) are counted from the <a href="http://corpus.quran.com" rel="noopener">Quranic Arabic Corpus</a>. Verse translations: Saheeh International.</p>
     <p><a href="privacy">Privacy</a> · <a href="terms">Terms</a></p>
     <p><button class="link danger" id="resetBtn" type="button">Reset all my progress</button></p>
   </footer>
   </div>
+  </div>
+</div>
+<div class="chooser" id="deckChooser" hidden>
+  <div class="chooser-box" role="dialog" aria-modal="true" aria-labelledby="chooserTitle">
+    <h2 id="chooserTitle">Which deck?</h2>
+    <button class="deck-pick" data-deck="islamic" type="button"><b>Quran and Islamic terms</b><small></small></button>
+    <button class="deck-pick" data-deck="main" type="button"><b>Arabic vocabulary</b><small></small></button>
+    <button class="link" data-act="close-chooser" type="button">Cancel</button>
   </div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
