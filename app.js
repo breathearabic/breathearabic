@@ -643,10 +643,13 @@ function renderCard(){
   html2 += arFirst
     ? '<div class="prompt is-ar' + arSizeClass(c.ar) + '" lang="ar">' + esc(c.ar) + '</div>'
     : '<div class="prompt is-en">' + esc(c.en) + '</div>';
+  // Arabic first: the example sentences show on the front too, so the flip only reveals the English.
+  if (arFirst && c.ex.length) html2 += '<div class="front-ex">' + c.ex.map(function(e){ return '<p class="ex-ar" lang="ar">' + esc(e[0]) + '</p>'; }).join("") + '</div>';
   if (fc.revealed) {
     html2 += '<div class="answer" aria-live="polite">' + (arFirst
-      ? '<div class="answer-main is-en">' + esc(c.en) + '</div>'
-      : '<div class="answer-main is-ar" lang="ar">' + esc(c.ar) + '</div>') + exHtml(c) +
+      ? '<div class="answer-main is-en">' + esc(c.en) + '</div>' +
+        (c.ex.length ? '<div class="examples">' + c.ex.map(function(e){ return '<p class="ex-en">' + esc(e[1]) + '</p>'; }).join("") + '</div>' : "")
+      : '<div class="answer-main is-ar" lang="ar">' + esc(c.ar) + '</div>' + exHtml(c)) +
       (s ? memBarHtml(s) : '<p class="mem">First time seeing this word.</p>') + '</div>';
   } else {
     html2 += '<div class="tap">Try to recall it, then tap to check</div>';

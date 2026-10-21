@@ -151,7 +151,10 @@ button{cursor:pointer}
 .answer-main.is-en{font-size:1.35rem;font-weight:600;line-height:1.35}
 .answer-main.is-ar{font-family:var(--ar);direction:rtl;font-size:2.4rem;font-weight:700;line-height:1.4}
 .examples{margin:14px auto 0;max-width:56ch;display:grid;gap:12px;text-align:center}
-.ex .ex-ar{font-family:var(--ar);direction:rtl;font-size:1.4rem;line-height:1.7;margin:0}
+.ex .ex-ar{font-family:var(--ar);direction:rtl;font-size:1.6rem;line-height:1.7;margin:0}
+.front-ex{text-align:center;padding:0 4px 14px}
+.front-ex .ex-ar{font-family:var(--ar);direction:rtl;font-size:clamp(1.5rem,5vw,1.85rem);line-height:1.7;margin:0 0 4px}
+.answer .examples .ex-en{color:var(--muted);margin:6px 0 0;font-size:1rem}
 .ex .ex-en{color:var(--muted);margin:2px 0 0;font-size:.95rem}
 .tap{text-align:center;color:var(--muted);font-size:.88rem;margin-top:4px}
 @media (prefers-reduced-motion: no-preference){ .answer{animation:rise .22s ease-out} @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}} }
