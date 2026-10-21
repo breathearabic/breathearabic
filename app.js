@@ -257,7 +257,7 @@ function hasAccess(){
 }
 // Deck counts leave out the learner's own saved words (from the Read page).
 // Two decks: the main vocabulary and the Islamic terms. Everything below works on the chosen one.
-var DECKS = {main:{name:"Arabic vocabulary", sub:"Everyday Classical Arabic, A1 to C2"}, islamic:{name:"Quran and Islamic terms", sub:"The Quran's 300 most common words, then aqidah, fiqh, seerah and character. Free"}};
+var DECKS = {main:{name:"General Vocabulary", sub:"Everyday Arabic to strengthen your comprehension and fluency"}, islamic:{name:"Quran and Islamic terms", sub:"The most common vocabulary from the Quran and Islamic texts"}};
 function inDeck(c){ return (c.deck || "main") === prefs.deck; }
 function deckVisible(lv){ return CARDS.filter(function(c){ return c.lv === lv && !c.mine && inDeck(c); }).length; }
 function mineCount(lv){ return CARDS.filter(function(c){ return c.lv === lv && c.mine && inDeck(c); }).length; }
