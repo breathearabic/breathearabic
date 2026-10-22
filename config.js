@@ -16,6 +16,9 @@ window.ARVOCAB_CONFIG = {
   // Natural Arabic audio for the Listen buttons (the "speak" function, SETUP.md step 12d).
   // false = use only the device's own voice.
   tts: true,
+  // Must match the speak function's TTS_VOICE and TTS_RATE secrets (these are its defaults), so saved audio plays straight from storage.
+  ttsVoice: "ar-XA-Wavenet-B",
+  ttsRate: 0.9,
   // A word counts as "known" once its memory lasts this many days (Anki calls these "mature").
   knownDays: 21,
   // A word forgotten this many times after being learned is flagged as a hard word.

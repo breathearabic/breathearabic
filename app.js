@@ -450,7 +450,7 @@ function onFilterChange(){
 
 /* ---------- speech ---------- */
 // Natural Arabic audio (see speech.js), with the device's own voice as a fallback.
-var speaker = window.makeSpeaker({client:function(){ return sb; }, enabled:CFG.tts !== false && configured, onError:function(m){ toast(m); }});
+var speaker = window.makeSpeaker({client:function(){ return sb; }, baseUrl:CFG.supabaseUrl, voice:CFG.ttsVoice, rate:CFG.ttsRate, enabled:CFG.tts !== false && configured, onError:function(m){ toast(m); }});
 document.body.classList.toggle("can-speak", speaker.available());
 function speak(text){ speaker.speak(text); }
 

@@ -187,6 +187,13 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
       </form>
     </section>
 
+    <section class="box" aria-labelledby="audioTitle">
+      <h2 id="audioTitle">Card audio</h2>
+      <p>Makes the Listen audio for every card ahead of time, so it plays instantly for everyone. Words that already have audio are skipped, so run it again after publishing new words. If the daily audio cap is reached, it stops; run it again tomorrow to finish.</p>
+      <div class="row-actions" style="margin-top:0"><button class="btn primary" id="audioBtn" type="button">Prepare audio for every card</button></div>
+      <p class="msg" id="audioMsg" aria-live="polite"></p>
+    </section>
+
     <section class="box" aria-labelledby="backupTitle">
       <h2 id="backupTitle">Backup</h2>
       <p>Supabase's free plan keeps no backups, so download one every week. It's a single file with every account, membership, card and answer. Keep it somewhere private, such as a folder in your Google Drive; it contains members' email addresses.</p>
@@ -196,6 +203,7 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
 </div>
 <script src="config.js"></script>
 <script src="vendor/supabase-js-2.117.2.js"></script>
+<script src="speech.js"></script>
 <script>
 (function(){
 "use strict";
@@ -606,6 +614,33 @@ $("#libForm").addEventListener("submit", function(e){
 });
 
 /* ---------- backup ---------- */
+/* ---------- card audio ---------- */
+$("#audioBtn").addEventListener("click", function(){
+  var btn = this, msg = $("#audioMsg");
+  btn.disabled = true; setMsg(msg, "Loading cards…");
+  var speaker = window.makeSpeaker({client:function(){ return sb; }, baseUrl:CFG.supabaseUrl, voice:CFG.ttsVoice, rate:CFG.ttsRate});
+  fetchAll("cards", "id,arabic,is_active", "sort_order").then(function(cards){
+    var words = Array.from(new Set(cards.filter(function(c){ return c.is_active !== false; }).map(function(c){ return c.arabic; })));
+    var i = 0, done = {saved:0, made:0, error:0}, stop = false;
+    function worker(){
+      if (stop || i >= words.length) return Promise.resolve();
+      var w = words[i++];
+      return speaker.prepare(w).then(function(r){
+        if (r === "paused") { stop = true; return; }
+        done[r] = (done[r] || 0) + 1;
+        var n = done.saved + done.made + done.error;
+        if (n % 10 === 0) setMsg(msg, n + " of " + words.length + " checked: " + done.made + " new, " + done.saved + " already had audio.");
+      }).then(worker);
+    }
+    return Promise.all([worker(), worker(), worker()]).then(function(){
+      var n = done.saved + done.made + done.error;
+      setMsg(msg, (stop ? "Paused at the daily audio cap after " + n + " of " + words.length + " words. Run it again tomorrow to finish. " : "Done: all " + words.length + " words checked. ") +
+        done.made + " made now, " + done.saved + " already had audio" + (done.error ? ", " + done.error + " failed (try again)" : "") + ".", stop || done.error ? "bad" : "ok");
+    });
+  }).catch(function(err){ setMsg(msg, "Couldn't load the cards: " + err.message, "bad"); })
+    .then(function(){ btn.disabled = false; });
+});
+
 function initBackup(){
   var last = lsGet("arvocab-admin-last-backup");
   var el = $("#backupLast");

@@ -561,7 +561,7 @@ function save(){
 
 /* ---------- small helpers shared with the flashcards ---------- */
 // Natural Arabic audio (see speech.js), with the device's own voice as a fallback.
-var speaker = window.makeSpeaker({client:function(){ return sb; }, enabled:CFG.tts !== false, onError:function(m){ toast(m); }});
+var speaker = window.makeSpeaker({client:function(){ return sb; }, baseUrl:CFG.supabaseUrl, voice:CFG.ttsVoice, rate:CFG.ttsRate, enabled:CFG.tts !== false, onError:function(m){ toast(m); }});
 function speak(text){ speaker.speak(text); }
 function subscribe(btn){
   if (!CFG.paymentsEnabled) { toast("Subscriptions are opening soon."); return; }

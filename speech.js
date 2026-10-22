@@ -66,6 +66,42 @@ window.makeSpeaker = function(opts){
       if (p && p.catch) p.catch(function(){ if (!deviceSpeak(text)) onError("Couldn't play the audio."); });
     });
   }
+  // Saved clips are named after their text (as the speak function names them), so the app can play one
+  // straight from storage without asking the function first. Only text never heard before needs the function.
+  var VOICE = opts.voice || "ar-XA-Wavenet-B", RATE = opts.rate || 0.9;
+  function norm(t){ return String(t).replace(/ـ/g, "").replace(/\s+/g, " ").trim(); }
+  function directUrl(text){
+    if (!opts.baseUrl || !(window.crypto && crypto.subtle && window.TextEncoder)) return Promise.resolve(null);
+    return crypto.subtle.digest("SHA-256", new TextEncoder().encode(VOICE + "|" + RATE + "|" + norm(text))).then(function(buf){
+      var key = Array.prototype.map.call(new Uint8Array(buf), function(b){ return ("0" + b.toString(16)).slice(-2); }).join("");
+      return opts.baseUrl.replace(/\/$/, "") + "/storage/v1/object/public/tts/" + key.slice(0, 2) + "/" + key + ".mp3";
+    }, function(){ return null; });
+  }
+  function saved(text, method){
+    return directUrl(text).then(function(url){
+      if (!url) return null;
+      return fetch(url, {method:method || "GET"}).then(function(res){
+        if (!res.ok) return null;
+        if (method !== "HEAD" && "caches" in window) caches.open(AUDIO_CACHE).then(function(c){ c.put(url, res); }).catch(function(){});
+        return url;
+      }, function(){ return null; });
+    });
+  }
+  // Admin: make sure a clip exists, without playing it. Resolves "saved", "made", "paused" (daily cap) or "error".
+  function prepare(text){
+    text = clean(text);
+    if (!text) return Promise.resolve("error");
+    return saved(text, "HEAD").then(function(url){
+      if (url) return "saved";
+      var sb = opts.client && opts.client();
+      if (!sb) return "error";
+      return sb.functions.invoke("speak", {body:{text:text}}).then(function(r){
+        if (r.data && r.data.url) return "made";
+        var status = r.error && r.error.context && r.error.context.status;
+        return status === 503 ? "paused" : "error";
+      }, function(){ return "error"; });
+    });
+  }
   // Separators like × and / are read as a short pause.
   function clean(t){ return String(t || "").replace(/[×\/\-–_]/g, "، ").replace(/\s+/g, " ").trim(); }
 
@@ -81,6 +117,13 @@ window.makeSpeaker = function(opts){
       return;
     }
     unlock();
+    saved(text).then(function(url){
+      if (mine !== ticket) return;
+      if (url) { remember(text, url); play(url, text, mine); return; }
+      fromFunction(sb, text, mine);
+    });
+  }
+  function fromFunction(sb, text, mine){
     sb.functions.invoke("speak", {body:{text:text}}).then(function(r){
       if (mine !== ticket) return;   // a newer Listen tap won
       if (r.data && r.data.url) { remember(text, r.data.url); play(r.data.url, text, mine); return; }
@@ -92,5 +135,5 @@ window.makeSpeaker = function(opts){
       if (mine === ticket && !deviceSpeak(text)) onError("Couldn't load the audio. Please try again.");
     });
   }
-  return {speak:speak, available:function(){ return opts.enabled !== false || !!arVoice; }};
+  return {speak:speak, prepare:prepare, available:function(){ return opts.enabled !== false || !!arVoice; }};
 };
