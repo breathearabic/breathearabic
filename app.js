@@ -23,9 +23,9 @@ var sched = makeScheduler({
   elapsed: function(last, now){ return dayNum(now) - dayNum(last); },
   reviewDue: function(now, days){ return addDays(now, days); },
   fuzz: true,
-  // A new or forgotten word comes back after 10 minutes, then an hour, before its first multi-day review.
-  learnSteps: [10, 60],
-  relearnSteps: [10, 60]
+  // Anki's defaults: a new word comes back after 1 minute, then 10 minutes, then tomorrow; a forgotten one after 10 minutes.
+  learnSteps: [1, 10],
+  relearnSteps: [10]
 });
 
 /* ---------- stages, Anki-style ----------
@@ -284,14 +284,36 @@ function pool(){ return CARDS.filter(function(c){ return inDeck(c) && prefs.leve
 function levelNames(){ return prefs.levels.slice().sort().map(function(l){ return LV[l]; }); }
 function levelLabel(cap){ return prefs.levels.length >= 6 ? (cap ? "All levels" : "all levels") : joinNames(levelNames()); }
 function joinNames(a){ return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
+// Each deck has its own new-words-a-day limit and its own count, e.g. 20 general words and 5 Quran words.
+function deckNewPerDay(){
+  var m = prefs.newPerDayByDeck || {};
+  return m[prefs.deck] != null ? m[prefs.deck] : prefs.deck === "main" ? (prefs.newPerDay || 20) : 10;
+}
+// Today's work left in the deck you're not studying: reviews due plus new words still allowed.
+function otherDeckWork(now){
+  var mine = prefs.deck, other = Object.keys(DECKS).filter(function(d){ return d !== mine; })[0];
+  if (!other) return null;
+  prefs.deck = other;
+  try {
+    var q = queueInfo(now), due = q.learnDue.length + q.revDue.length, fresh = q.newShown;
+  } finally { prefs.deck = mine; }
+  if (!due && !fresh) return null;
+  var parts = [];
+  if (due) parts.push(due + " to review");
+  if (fresh) parts.push(fresh + " new");
+  return {deck:other, label:parts.join(", ")};
+}
 function newStartedToday(now){
   var start = dayStart(now), n = 0;
-  for (var id in prog.p) if (prog.p[id].f && prog.p[id].f >= start) n++;
+  for (var id in prog.p) {
+    var c = byId.get(id);
+    if (prog.p[id].f && prog.p[id].f >= start && c && inDeck(c)) n++;
+  }
   return n;
 }
 function newLimitToday(now){
-  var extra = prefs.extra && prefs.extra.day === dayNum(now) ? prefs.extra.n : 0;
-  return prefs.newPerDay + extra;
+  var e = prefs.extra, extra = e && e.day === dayNum(now) && (e.deck || "main") === prefs.deck ? e.n : 0;
+  return deckNewPerDay() + extra;
 }
 function queueInfo(now){
   var p = pool(), learnDue = [], learnLater = [], revDue = [], fresh = [], learned = 0, learning = 0;
@@ -308,27 +330,29 @@ function queueInfo(now){
   return {pool:p, learnDue:learnDue, learnLater:learnLater, revDue:revDue, fresh:fresh, newShown:Math.min(newLeft, fresh.length), newLeft:newLeft, learned:learned, learning:learning};
 }
 /* Spacing: a word you've just answered sits out until SPACING other cards have been shown (or RECENT_MS
-   has passed), so you never see the same word back-to-back. Learning words always wait out their full
-   step (10 minutes, then an hour): they're never shown early, so refreshing can't skip the wait. */
-var SPACING = 5, RECENT_MS = 10 * MINUTE;
+   has passed), so you never see the same word back-to-back.
+   Like Anki, once nothing else is left, learning words due within the next 20 minutes are shown early
+   ("learn ahead"), so a day's study is finished in one sitting and nobody has to come back an hour later. */
+var SPACING = 5, RECENT_MS = 10 * MINUTE, LEARN_AHEAD = 20 * MINUTE;
 function recentIds(now){ return fc.recent.filter(function(r){ return now - r.at < RECENT_MS; }).slice(-SPACING).map(function(r){ return r.id; }); }
 function pickNext(now){
   var q = queueInfo(now), recent = recentIds(now);
   var fresh = function(c){ return recent.indexOf(c.id) < 0; };
   var due = q.learnDue.concat(q.revDue).sort(function(a, b){ return state(a.id).due - state(b.id).due; });
   var news = q.newShown ? q.fresh.slice(0, q.newShown) : [];
-  var pick = due.filter(fresh)[0] || news.filter(fresh)[0];
+  var ahead = q.learnLater.filter(function(c){ return state(c.id).due <= now + LEARN_AHEAD; });
+  var pick = due.filter(fresh)[0] || news.filter(fresh)[0] || ahead.filter(fresh)[0];
   if (pick) return pick.id;
-  // Only words seen a few cards ago are left. One that's actually due may come back now:
-  // the one seen longest ago, to keep repeats as far apart as possible.
-  if (!due.length) return null;
+  // Only words seen a few cards ago are left: show the one seen longest ago, to keep repeats far apart.
+  var left = due.length ? due : ahead;
+  if (!left.length) return null;
   var lastSeen = function(c){ var r = fc.recent.filter(function(x){ return x.id === c.id; }).pop(); return r ? r.at : 0; };
-  return due.slice().sort(function(a, b){ return lastSeen(a) - lastSeen(b); })[0].id;
+  return left.slice().sort(function(a, b){ return lastSeen(a) - lastSeen(b); })[0].id;
 }
 // When the next learning word becomes due.
 function nextAvailableAt(now){
   var q = queueInfo(now);
-  return q.learnLater.length ? state(q.learnLater[0].id).due : Infinity;
+  return q.learnLater.length ? state(q.learnLater[0].id).due - LEARN_AHEAD : Infinity;
 }
 
 /* ---------- staircase ---------- */
@@ -405,10 +429,10 @@ function setMode(m){
   if (m === "list") renderList();
 }
 var typeSel = $("#typeSel"), dirSel = $("#dirSel"), newSel = $("#newSel");
-typeSel.value = prefs.type; dirSel.value = prefs.dir; newSel.value = String(prefs.newPerDay);
+typeSel.value = prefs.type; dirSel.value = prefs.dir; newSel.value = String(deckNewPerDay());
 typeSel.addEventListener("change", function(){ prefs.type = this.value; savePrefs(); onFilterChange(); });
 dirSel.addEventListener("change", function(){ prefs.dir = this.value; savePrefs(); if (prefs.mode === "cards") renderCard(); if (qz.qs && qz.i < qz.qs.length) renderQuestion(); });
-newSel.addEventListener("change", function(){ prefs.newPerDay = +this.value; savePrefs(); fc.cur = null; renderStairs(); renderCard(); });
+newSel.addEventListener("change", function(){ prefs.newPerDayByDeck = Object.assign({}, prefs.newPerDayByDeck); prefs.newPerDayByDeck[prefs.deck] = +this.value; savePrefs(); fc.cur = null; renderStairs(); renderCard(); });
 var srcSel = $("#srcSel");
 srcSel.value = prefs.source === "mine" || prefs.source === "hard" ? prefs.source : "all";
 srcSel.addEventListener("change", function(){ prefs.source = this.value; savePrefs(); onFilterChange(); });
@@ -630,9 +654,15 @@ function renderCard(){
     } else if (!q.fresh.length) {
       lines.push(lockedSelected().length ? "You've started every free word you've chosen. Members can keep going with " + joinNames(lockedSelected().map(function(l){ return LV[l]; })) + "." : "You've started every word in " + levelLabel() + ". Add another level above to keep going.");
     }
-    el.innerHTML = html + '<div class="panel-msg"><h2>All caught up</h2><p>Nothing else is due in ' + levelLabel() + ' right now.</p>' +
+    // If the other deck still has work today, offer that first instead of a quiz.
+    var other = otherDeckWork(now), goBtn = other
+      ? '<button class="btn primary" data-act="go-deck" data-deck="' + other.deck + '" type="button">Continue with ' + esc(DECKS[other.deck].name) + ' (' + other.label + ')</button>'
+      : '<button class="btn primary" data-act="to-quiz" type="button">Quiz yourself instead</button>';
+    if (other) moreBtn = moreBtn || '<button class="btn" data-act="to-quiz" type="button">Quiz instead</button>';
+    el.innerHTML = html + '<div class="panel-msg"><h2>' + (other ? "This deck is done for today" : "All caught up") + '</h2><p>' +
+      (other ? esc(DECKS[other.deck].name) + ' still has ' + other.label + ' for today.' : 'Nothing else is due in ' + levelLabel() + ' right now.') + '</p>' +
       '<div class="done-list">' + lines.map(function(x){ return '<p>' + esc(x) + '</p>'; }).join("") + '</div>' +
-      '<div class="actions' + (moreBtn ? "" : " single") + '">' + moreBtn + '<button class="btn primary" data-act="to-quiz" type="button">Quiz yourself instead</button></div></div>';
+      '<div class="actions' + (moreBtn ? "" : " single") + '">' + moreBtn + goBtn + '</div></div>';
     if (nextLearn) {
       var wait = nextAvailableAt(now) - now;
       if (wait < 6 * 3600000) fc.timer = setTimeout(function(){ if (prefs.mode === "cards") renderCard(); }, Math.max(wait, 1000) + 500);
@@ -708,9 +738,11 @@ $("#panel-cards").addEventListener("click", function(e){
     if (act === "reveal") return reveal();
     if (act === "undo") return undo();
     if (act === "to-quiz") return setMode("quiz");
+    if (act === "go-deck") { setDeck(e.target.closest("[data-act]").dataset.deck); $("#deckName").textContent = DECKS[prefs.deck].name; renderStairs(); return renderCard(); }
     if (act === "more-new") {
       var day = dayNum(Date.now());
-      prefs.extra = {day:day, n:(prefs.extra && prefs.extra.day === day ? prefs.extra.n : 0) + 10};
+      var same = prefs.extra && prefs.extra.day === day && (prefs.extra.deck || "main") === prefs.deck;
+      prefs.extra = {day:day, deck:prefs.deck, n:(same ? prefs.extra.n : 0) + 10};
       savePrefs(); fc.cur = null; renderStairs(); return renderCard();
     }
     if (act === "subscribe") return;
@@ -1343,6 +1375,7 @@ function closeChooser(){ $("#deckChooser").hidden = true; pendingStudy = null; }
 function setDeck(d){
   if (prefs.deck === d) return;
   prefs.deck = d; prefs.source = "all"; fc.cur = null; fc.revealed = false; fc.undo = null; savePrefs();
+  newSel.value = String(deckNewPerDay());
 }
 document.addEventListener("click", function(e){
   var a = e.target.closest("#home a[href^='#study']");
