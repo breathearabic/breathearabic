@@ -393,6 +393,8 @@ footer p{margin:0;max-width:62ch}
 .bars i.now{background:var(--lapis)} .bars i.now.zero{background:color-mix(in srgb,var(--lapis) 35%,transparent)}
 .deck-tag{font-size:.8rem;font-weight:600;color:var(--lapis);background:var(--lapis-soft);border-radius:999px;padding:2px 10px;margin-left:6px;vertical-align:middle}
 .deck-line{margin:0 0 10px;font-size:.9rem;color:var(--muted)}
+.study-options{margin-top:28px;padding-top:18px;border-top:1px solid var(--line)}
+.study-options h2{font-size:1rem;margin:0 0 12px}
 .chooser{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px}
 .chooser[hidden]{display:none}
 .chooser-box{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px;width:min(420px,100%);display:grid;gap:10px;text-align:center}
@@ -562,16 +564,29 @@ footer p{margin:0;max-width:62ch}
   <!-- ===== Study: flashcards, quiz, word list ===== -->
   <div id="study" hidden>
   <p class="deck-line">Deck: <b id="deckName"></b> · <a href="#" data-act="switch-deck">Switch deck</a></p>
-  <section aria-label="Choose levels">
-    <div class="stairs" id="stairs"></div>
-    <div class="levels-meta"><span id="levelSummary" aria-live="polite"></span><button class="link" id="allBtn" type="button">Select all levels</button></div>
-  </section>
-
   <div class="tabs" role="tablist" aria-label="Study mode">
     <button class="tab" role="tab" id="tab-cards" data-mode="cards" type="button">Review</button>
     <button class="tab" role="tab" id="tab-quiz" data-mode="quiz" type="button">Quiz</button>
     <button class="tab" role="tab" id="tab-list" data-mode="list" type="button">Word list</button>
   </div>
+
+  <div class="banner" id="lockBanner" hidden></div>
+
+  <main>
+    <section id="panel-cards" role="tabpanel" aria-labelledby="tab-cards"></section>
+    <section id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden></section>
+    <section id="panel-list" role="tabpanel" aria-labelledby="tab-list" hidden>
+      <input class="search" id="search" type="search" placeholder="Search in Arabic or English" aria-label="Search words" autocomplete="off">
+      <div class="legend"><span><i style="border:1.5px solid var(--line)"></i>New</span><span><i style="background:var(--learning)"></i>Learning</span><span><i style="background:color-mix(in srgb,var(--known) 55%,transparent)"></i>Young</span><span><i style="background:var(--known)"></i>Known (memory lasts 3+ weeks)</span><span>Tap a word to see its example and memory details.</span></div>
+      <div id="list"></div>
+    </section>
+  </main>
+  <section class="study-options" aria-labelledby="optTitle">
+  <h2 id="optTitle">Choose what to study</h2>
+  <section aria-label="Choose levels">
+    <div class="stairs" id="stairs"></div>
+    <div class="levels-meta"><span id="levelSummary" aria-live="polite"></span><button class="link" id="allBtn" type="button">Select all levels</button></div>
+  </section>
 
   <div class="filters">
     <label>Word type
@@ -609,17 +624,7 @@ footer p{margin:0;max-width:62ch}
     </label>
   </div>
 
-  <div class="banner" id="lockBanner" hidden></div>
-
-  <main>
-    <section id="panel-cards" role="tabpanel" aria-labelledby="tab-cards"></section>
-    <section id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz" hidden></section>
-    <section id="panel-list" role="tabpanel" aria-labelledby="tab-list" hidden>
-      <input class="search" id="search" type="search" placeholder="Search in Arabic or English" aria-label="Search words" autocomplete="off">
-      <div class="legend"><span><i style="border:1.5px solid var(--line)"></i>New</span><span><i style="background:var(--learning)"></i>Learning</span><span><i style="background:color-mix(in srgb,var(--known) 55%,transparent)"></i>Young</span><span><i style="background:var(--known)"></i>Known (memory lasts 3+ weeks)</span><span>Tap a word to see its example and memory details.</span></div>
-      <div id="list"></div>
-    </section>
-  </main>
+  </section>
   <footer>
     <p>Words come up in order of when they're due, oldest first, whatever their level, and the same word never comes back until a few others have been shown. New words are added in deck order and come back after 1 minute and then 10 minutes, then tomorrow, like Anki. Once nothing else is left, those come up straight away, so you can finish the day's study in one sitting and come back tomorrow. Reviews are scheduled with FSRS, the memory model Anki uses, with two buttons like a pass/fail setup. Each time you remember a word, its memory gets stronger and the next review moves further out; each time you forget it, it goes back to learning. A word counts as <b>known</b> once its memory lasts three weeks, which usually takes three or four correct answers spread over a couple of weeks. A word forgotten six times becomes a <b>hard word</b>, which you can practise on its own. A new study day starts at 4am.</p>
     <p>The levels are estimates for learners of Classical Arabic, based on how common each word is in the Quran, hadith and classical texts, and how abstract it is.</p>
