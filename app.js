@@ -331,8 +331,8 @@ function queueInfo(now){
 }
 /* Spacing: a word you've just answered sits out until SPACING other cards have been shown (or RECENT_MS
    has passed), so you never see the same word back-to-back.
-   Like Anki, once nothing else is left, learning words due within the next 20 minutes are shown early
-   ("learn ahead"), so a day's study is finished in one sitting and nobody has to come back an hour later. */
+   Once nothing else is left, every learning word due before the next study day (4am) is shown straight away,
+   so a day's study is finished in one sitting and nobody has to come back an hour later. */
 var SPACING = 5, RECENT_MS = 10 * MINUTE, LEARN_AHEAD = 20 * MINUTE;
 function recentIds(now){ return fc.recent.filter(function(r){ return now - r.at < RECENT_MS; }).slice(-SPACING).map(function(r){ return r.id; }); }
 function pickNext(now){
@@ -340,7 +340,8 @@ function pickNext(now){
   var fresh = function(c){ return recent.indexOf(c.id) < 0; };
   var due = q.learnDue.concat(q.revDue).sort(function(a, b){ return state(a.id).due - state(b.id).due; });
   var news = q.newShown ? q.fresh.slice(0, q.newShown) : [];
-  var ahead = q.learnLater.filter(function(c){ return state(c.id).due <= now + LEARN_AHEAD; });
+  var dayEnd = dayStart(now) + DAY;
+  var ahead = q.learnLater.filter(function(c){ return state(c.id).due < dayEnd; });
   var pick = due.filter(fresh)[0] || news.filter(fresh)[0] || ahead.filter(fresh)[0];
   if (pick) return pick.id;
   // Only words seen a few cards ago are left: show the one seen longest ago, to keep repeats far apart.
@@ -352,7 +353,9 @@ function pickNext(now){
 // When the next learning word becomes due.
 function nextAvailableAt(now){
   var q = queueInfo(now);
-  return q.learnLater.length ? state(q.learnLater[0].id).due - LEARN_AHEAD : Infinity;
+  if (!q.learnLater.length) return Infinity;
+  var due = state(q.learnLater[0].id).due;
+  return due < dayStart(now) + DAY ? now : due;
 }
 
 /* ---------- staircase ---------- */
