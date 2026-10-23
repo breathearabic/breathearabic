@@ -171,7 +171,7 @@ function tidySentence(s){
     .replace(/^[،,.;:\-–—]\s*/, "").replace(/\s*[،,;:\-–—]$/, "");
   return ref ? t + " " + ref.trim() : t;
 }
-function toCard(r){ return {id:r.id, deck:r.deck || "main", ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, ex:Array.isArray(r.examples) ? r.examples.map(function(e){ return [tidySentence(e[0]), tidySentence(e[1])]; }) : [], so:r.sort_order, free:r.is_free}; }
+function toCard(r){ return {id:r.id, deck:r.deck || "main", ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, ex:Array.isArray(r.examples) ? r.examples.map(function(e){ return [tidySentence(e[0]).replace(/[.۔]+$/, ""), tidySentence(e[1])]; }) : [], so:r.sort_order, free:r.is_free}; }
 function setCards(list){
   // Words saved on the Read page have ids starting "u-".
   list.forEach(function(c){ c.mine = /^u-/.test(c.id); });
