@@ -323,19 +323,25 @@ function newLimitToday(now){
   var e = prefs.extra, extra = e && e.day === dayNum(now) && (e.deck || "main") === prefs.deck ? e.n : 0;
   return deckNewPerDay() + extra;
 }
+/* A word still being learned that was last answered earlier today, before this visit to the site, waits until
+   tomorrow: once someone leaves, the day's study is over and words don't reappear when they open the site again.
+   While the site stays open, learning words come back as usual. */
+var VISIT_START = Date.now();
+function heldTillTomorrow(s, now){ return s.st !== 2 && s.last != null && s.last >= dayStart(now) && s.last < VISIT_START; }
 function queueInfo(now){
-  var p = pool(), learnDue = [], learnLater = [], revDue = [], fresh = [], learned = 0, learning = 0;
+  var p = pool(), learnDue = [], learnLater = [], revDue = [], fresh = [], learned = 0, learning = 0, held = 0;
   p.forEach(function(c){
     var s = state(c.id);
     if (!s) { fresh.push(c); return; }
     if (s.st === 2) { if (isKnown(s)) learned++; if (s.due <= now) revDue.push(c); }
+    else if (heldTillTomorrow(s, now)) { learning++; held++; }
     else { learning++; if (s.due <= now) learnDue.push(c); else learnLater.push(c); }
   });
   var byDue = function(a, b){ return state(a.id).due - state(b.id).due; };
   learnDue.sort(byDue); learnLater.sort(byDue); revDue.sort(byDue);
   fresh.sort(function(a, b){ return a.so - b.so; });
   var newLeft = Math.max(0, newLimitToday(now) - newStartedToday(now));
-  return {pool:p, learnDue:learnDue, learnLater:learnLater, revDue:revDue, fresh:fresh, newShown:Math.min(newLeft, fresh.length), newLeft:newLeft, learned:learned, learning:learning};
+  return {pool:p, learnDue:learnDue, learnLater:learnLater, revDue:revDue, fresh:fresh, newShown:Math.min(newLeft, fresh.length), newLeft:newLeft, learned:learned, learning:learning, held:held};
 }
 /* Spacing: a word you've just answered sits out until SPACING other cards have been shown (or RECENT_MS
    has passed), so you never see the same word back-to-back.
@@ -524,7 +530,7 @@ function memoryLine(id, now){
   if (!s) return "Not studied yet.";
   var r = Math.round(sched.retrievability(s, now) * 100);
   var parts = [];
-  parts.push(s.st === 2 ? (s.due <= now ? "Due for review now." : "Next review " + whenLabel(s.due, now) + ".") : (s.due <= now ? "Still in its learning steps and due now." : "Still in its learning steps; comes back " + whenLabel(s.due, now) + "."));
+  parts.push(s.st === 2 ? (s.due <= now ? "Due for review now." : "Next review " + whenLabel(s.due, now) + ".") : heldTillTomorrow(s, now) ? "Still in its learning steps; comes back tomorrow." : (s.due <= now ? "Still in its learning steps and due now." : "Still in its learning steps; comes back " + whenLabel(s.due, now) + "."));
   parts.push("Memory lasts about " + memDays(s.s) + " before recall drops to 90%.");
   var st = stageOf(s);
   if (st === "young") parts.push("It counts as known once its memory reaches " + KNOWN_DAYS + " days.");
@@ -1312,13 +1318,18 @@ function renderHome(){
     '<div class="stat due"><b>' + due + '</b><span>to review</span></div>' +
     '<div class="stat new"><b>' + fresh + '</b><span>new words</span></div>' +
     '<div class="stat lrn"><b>' + learning + '</b><span>learning</span></div>';
-  var work = due + fresh;
-  $("#todayEta").textContent = work ? "about " + Math.max(1, Math.round((due * 8 + fresh * 15) / 60)) + " min" : "";
+  // Learning words due later today can be done now (study learns ahead to the end of the day), so they count as work.
+  var dayEnd = dayStart(now) + DAY;
+  var ahead = q.learnLater.filter(function(c){ return state(c.id).due < dayEnd; }).length;
+  var work = due + fresh + ahead;
+  $("#todayEta").textContent = work ? "about " + Math.max(1, Math.round(((due + ahead) * 8 + fresh * 15) / 60)) + " min" : "";
   var cta;
-  if (work) cta = '<a class="btn primary" href="#study/cards">' + (due ? "Start studying" : "Learn new words") + '</a><a class="btn" href="#study/quiz">Quiz</a>';
+  if (work) cta = '<a class="btn primary" href="#study/cards">' + (due ? "Start studying" : fresh ? "Learn new words" : "Finish today's words") + '</a><a class="btn" href="#study/quiz">Quiz</a>';
   else {
-    var nextDue = q.pool.map(function(c){ var s = state(c.id); return s ? s.due : Infinity; }).reduce(function(a, b){ return Math.min(a, b); }, Infinity);
-    cta = '<p class="note">All caught up' + (nextDue < Infinity ? ". Next review " + whenLabel(nextDue, now) : "") + '.</p>' +
+    var tomorrow = dayStart(now) + DAY;
+    var nextDue = q.pool.map(function(c){ var s = state(c.id); return !s ? Infinity : heldTillTomorrow(s, now) ? tomorrow : s.due; }).reduce(function(a, b){ return Math.min(a, b); }, Infinity);
+    cta = '<p class="note">All caught up' + (q.held ? ". " + q.held + " word" + (q.held === 1 ? "" : "s") + " you're learning come" + (q.held === 1 ? "s" : "") + " back tomorrow"
+        : nextDue < Infinity ? ". Next review " + whenLabel(nextDue, now) : "") + '.</p>' +
       '<a class="btn" href="#study/cards">Learn more words</a><a class="btn" href="#study/quiz">Quiz</a>';
   }
   if (onlyLockedChosen()) cta = '<p class="note">The levels you\'ve chosen are for members.</p><a class="btn primary" href="#study/cards">Choose levels</a>';
