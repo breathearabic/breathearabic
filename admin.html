@@ -93,6 +93,20 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
 .missing{outline:1.5px solid var(--learning)}
 @media (max-width:700px){ .word-grid,.word-ex{grid-template-columns:1fr} }
 .center{max-width:440px;margin:10vh auto;text-align:center}
+.sub{font-size:.95rem;font-weight:600;margin:20px 0 8px}
+.note-sm{margin:-4px 0 8px;font-size:.85rem;color:var(--muted)}
+.funnel{display:grid;gap:6px}
+.funnel-row{display:grid;grid-template-columns:minmax(150px,1.2fr) 3fr 110px;gap:10px;align-items:center;font-size:.9rem}
+@media (max-width:560px){ .funnel-row{grid-template-columns:1fr auto} .funnel-bar{grid-column:1 / -1;order:3} }
+.funnel-bar{height:12px;border-radius:999px;background:var(--step);overflow:hidden}
+.funnel-bar i{display:block;height:100%;background:var(--lapis);border-radius:999px}
+.funnel-row b{font-variant-numeric:tabular-nums;text-align:right;font-weight:600}
+.funnel-row small{color:var(--muted);font-weight:400}
+.bars{display:flex;align-items:flex-end;gap:3px;height:90px;padding-top:6px}
+.bars span{flex:1;background:var(--lapis);border-radius:3px 3px 0 0;min-height:2px;opacity:.85}
+.bars span.zero{background:var(--step)}
+.muted{color:var(--muted)}
+.tag.gone{background:var(--learning-soft);color:var(--learning)}
 </style>
 </head>
 <body>
@@ -108,6 +122,25 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
     <section class="box" aria-labelledby="statsTitle">
       <h2 id="statsTitle">Members</h2>
       <div class="stats" id="stats"></div>
+    </section>
+
+    <section class="box" aria-labelledby="engTitle">
+      <h2 id="engTitle">Engagement</h2>
+      <p class="msg" id="engMsg">Loading…</p>
+      <div id="eng" hidden>
+        <h3 class="sub">How far people get</h3>
+        <div class="funnel" id="engFunnel"></div>
+        <h3 class="sub">People studying each day (last 30 days)</h3>
+        <div class="bars" id="engBars"></div>
+        <h3 class="sub">Where people stop</h3>
+        <p class="note-sm">People who studied at least once but not in the last 7 days.</p>
+        <div class="stats" id="engStop"></div>
+        <h3 class="sub">Everyone</h3>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Email</th><th>Joined</th><th>Days studied</th><th>Answers</th><th>Words known</th><th>Last studied</th><th>Last study day</th></tr></thead>
+          <tbody id="engUsers"></tbody>
+        </table></div>
+      </div>
     </section>
 
     <section class="box" aria-labelledby="giftTitle">
@@ -240,7 +273,7 @@ sb.auth.getSession().then(function(r){
   return check(sb.from("profiles").select("role").eq("id", me.id).maybeSingle()).then(function(p){
     if (!p.data || p.data.role !== "admin") { $("#gate").innerHTML = "<p>This page is only for the admin.</p>"; return; }
     $("#gate").hidden = true; $("#admin").hidden = false;
-    loadMembers(); initDeck(); initBackup(); loadLibrary();
+    loadMembers(); loadEngagement(); initDeck(); initBackup(); loadLibrary();
   });
 }).catch(function(e){ $("#gate").innerHTML = "<p>Couldn't load: " + esc(e.message) + "</p>"; });
 
@@ -280,6 +313,63 @@ function renderStats(){
   var recent = members.filter(function(x){ return Date.parse(x.created_at) > weekAgo; }).length;
   var stats = [[members.length, "sign-ups"], [recent, "new this week"], [paying, "paying members"], [gifted, "gifted members"], [members.length - paying - gifted, "free accounts"], [pending.length, "gifts waiting"]];
   $("#stats").innerHTML = stats.map(function(s){ return '<div class="stat"><b>' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join("");
+}
+/* ---------- Engagement: from sign-ups, the review log and progress (admin_engagement in 013_admin_engagement.sql) ---------- */
+var DECK_NAMES = {main:"General", islamic:"Quran"};
+function ago(iso){
+  if (!iso) return "never";
+  var d = Math.floor((Date.now() - Date.parse(iso)) / 86400000);
+  return d < 1 ? "today" : d === 1 ? "yesterday" : d + " days ago";
+}
+function loadEngagement(){
+  check(sb.rpc("admin_engagement")).then(function(r){ renderEngagement(r.data); })
+    .catch(function(e){ setMsg($("#engMsg"), "Couldn't load engagement: " + e.message + " (run 013_admin_engagement.sql in Supabase)", "bad"); });
+}
+function renderEngagement(data){
+  var now = Date.now(), week = 7 * 86400000;
+  var users = (data.users || []).filter(function(u){ return u.role !== "admin"; });   // your own study isn't counted
+  var studied = users.filter(function(u){ return u.answers > 0; });
+  var offs = function(u){ return u.day_offsets || []; };
+  var steps = [
+    ["Signed up", users.length],
+    ["Answered a card", studied.length],
+    ["Came back another day", studied.filter(function(u){ return offs(u).length >= 2; }).length],
+    ["Studied on day 7 or later", studied.filter(function(u){ return offs(u).some(function(o){ return o >= 7; }); }).length],
+    ["Studied on day 30 or later", studied.filter(function(u){ return offs(u).some(function(o){ return o >= 30; }); }).length],
+    ["Studied in the last 7 days", studied.filter(function(u){ return u.last && now - Date.parse(u.last) < week; }).length]
+  ];
+  var top = Math.max(1, users.length);
+  $("#engFunnel").innerHTML = steps.map(function(s){
+    var pct = Math.round(s[1] / top * 100);
+    return '<div class="funnel-row"><span>' + s[0] + '</span><span class="funnel-bar"><i style="width:' + pct + '%"></i></span><b>' + s[1] + ' <small>' + pct + '%</small></b></div>';
+  }).join("");
+
+  var daily = (data.daily || []).slice(-30), most = Math.max(1, Math.max.apply(null, daily.map(function(d){ return d.active; })));
+  $("#engBars").innerHTML = daily.map(function(d){
+    return '<span class="' + (d.active ? "" : "zero") + '" style="height:' + Math.max(2, d.active / most * 100) + '%" title="' + esc(day(d.d)) + ': ' + d.active + ' studying, ' + d.answers + ' answers, ' + d.signups + ' sign-ups"></span>';
+  }).join("");
+
+  var gone = studied.filter(function(u){ return !u.last || now - Date.parse(u.last) >= week; });
+  var n = gone.length, avg = function(f){ return n ? Math.round(gone.reduce(function(a, u){ return a + f(u); }, 0) / n * 10) / 10 : 0; };
+  var lastWrong = gone.reduce(function(a, u){ return a + (u.last_day ? u.last_day.wrong : 0); }, 0);
+  var lastAll = gone.reduce(function(a, u){ return a + (u.last_day ? u.last_day.answers : 0); }, 0);
+  var oneDay = gone.filter(function(u){ return offs(u).length === 1; }).length;
+  var quran = gone.filter(function(u){ return u.last_day && u.last_day.deck === "islamic"; }).length;
+  var stop = [[n, "stopped studying"], [oneDay, "only ever studied one day"], [avg(function(u){ return offs(u).length; }), "days studied, on average"],
+    [avg(function(u){ return u.known; }), "words known, on average"], [avg(function(u){ return u.last_day ? u.last_day.answers : 0; }), "answers on their last day"],
+    [(lastAll ? Math.round(lastWrong / lastAll * 100) : 0) + "%", "wrong on their last day"], [n ? Math.round(quran / n * 100) + "%" : "0%", "were on the Quran deck"]];
+  $("#engStop").innerHTML = stop.map(function(s){ return '<div class="stat"><b>' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join("");
+
+  $("#engUsers").innerHTML = users.slice().sort(function(a, b){ return (Date.parse(b.last) || 0) - (Date.parse(a.last) || 0); }).map(function(u){
+    var l = u.last_day, stopped = u.answers && now - Date.parse(u.last) >= week;
+    return '<tr><td>' + esc(u.email) + (u.paid ? ' <span class="tag comp">member</span>' : "") + '</td><td>' + day(u.joined) + '</td>' +
+      '<td>' + offs(u).length + '</td><td>' + u.answers + '</td><td>' + u.known + ' <small class="muted">of ' + u.started + '</small></td>' +
+      '<td>' + ago(u.last) + (stopped ? ' <span class="tag gone">stopped</span>' : "") + '</td>' +
+      '<td>' + (l ? l.answers + ' answers, ' + Math.round(l.wrong / Math.max(1, l.answers) * 100) + '% wrong, ' + (DECK_NAMES[l.deck] || l.deck) + ' deck' : "never studied") + '</td></tr>';
+  }).join("") || '<tr><td colspan="7">No accounts yet.</td></tr>';
+
+  $("#engMsg").textContent = "From sign-ups and flashcard answers. Your own admin account isn't counted. \"Stopped\" means no study for 7 days.";
+  $("#eng").hidden = false;
 }
 function renderMembers(){
   var q = $("#memberSearch").value.trim().toLowerCase();
