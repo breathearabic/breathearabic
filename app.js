@@ -1298,7 +1298,6 @@ function renderHome(){
   if (!CARDS.length) return;
   if (!DECKS[prefs.deck]) prefs.deck = "main";
   $("#todayDeck").textContent = DECKS[prefs.deck].name;
-  $("#tileIslamicSub").textContent = deckSize("islamic") + " free words: the Quran's most common, plus Islamic terms";
   var q = queueInfo(now);
   var due = q.learnDue.length + q.revDue.length, fresh = q.newShown, learning = q.learnDue.length + q.learnLater.length;
   $("#todayStats").innerHTML =
