@@ -163,7 +163,15 @@ function check(q){ return q.then(function(r){ if (r.error) throw r.error; return
 function isAuthError(e){ return e && (e.code === "PGRST301" || e.status === 401 || /JWT/i.test(e.message || "")); }
 
 /* ---------- loading from the cloud ---------- */
-function toCard(r){ return {id:r.id, deck:r.deck || "main", ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, ex:Array.isArray(r.examples) ? r.examples : [], so:r.sort_order, free:r.is_free}; }
+// Example sentences (especially ones saved from the Read page) can carry a stray comma, dash or space; tidy them for display.
+function tidySentence(s){
+  var ref = (String(s || "").match(/\s*\(\d+:\d+\)$/) || [""])[0];
+  var t = String(s || "").slice(0, String(s || "").length - ref.length).replace(/\s+/g, " ").trim()
+    .replace(/\s+([،,.;:!?؟)])/g, "$1").replace(/\(\s+/g, "(")
+    .replace(/^[،,.;:\-–—]\s*/, "").replace(/\s*[،,;:\-–—]$/, "");
+  return ref ? t + " " + ref.trim() : t;
+}
+function toCard(r){ return {id:r.id, deck:r.deck || "main", ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, ex:Array.isArray(r.examples) ? r.examples.map(function(e){ return [tidySentence(e[0]), tidySentence(e[1])]; }) : [], so:r.sort_order, free:r.is_free}; }
 function setCards(list){
   // Words saved on the Read page have ids starting "u-".
   list.forEach(function(c){ c.mine = /^u-/.test(c.id); });
