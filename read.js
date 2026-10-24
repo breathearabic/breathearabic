@@ -145,14 +145,14 @@ function loadCached(){
 }
 function loadRemote(){
   return Promise.all([
-    fetchAll("cards", "id,level,word_type,arabic,english,examples,sort_order,is_free", "sort_order"),
+    fetchAll("cards", "id,level,word_type,arabic,english,examples,sort_order,is_free,is_active", "sort_order"),
     fetchAll("progress", "card_id,state", "card_id"),
     check(sb.from("memberships").select("*").eq("user_id", user.id).maybeSingle()),
     check(sb.from("profiles").select("id,email,role").eq("id", user.id).maybeSingle()),
     check(sb.rpc("library_index")),
     check(sb.from("texts").select("id,owner_id,title,level,is_free,created_at").order("created_at", {ascending:false}))
   ]).then(function(r){
-    cards = r[0].map(toCard);
+    cards = r[0].filter(function(c){ return c.is_active !== false; }).map(toCard);   // editors can also see retired words
     // Keep any answers the flashcards haven't sent yet: they're in the local copy.
     var local = lsGet(ukey("prog")) || {};
     prog = {}; r[1].forEach(function(x){ prog[x.card_id] = x.state; });

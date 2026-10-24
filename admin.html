@@ -271,8 +271,18 @@ sb.auth.getSession().then(function(r){
   if (!s) { $("#gate").innerHTML = '<p>Sign in on the <a href="./">app</a> first, then come back here.</p>'; return; }
   me = s.user;
   return check(sb.from("profiles").select("role").eq("id", me.id).maybeSingle()).then(function(p){
-    if (!p.data || p.data.role !== "admin") { $("#gate").innerHTML = "<p>This page is only for the admin.</p>"; return; }
+    var role = p.data && p.data.role;
+    if (role !== "admin" && role !== "editor") { $("#gate").innerHTML = "<p>This page is only for the admin.</p>"; return; }
     $("#gate").hidden = true; $("#admin").hidden = false;
+    if (role === "editor") {
+      // Editors check words from the sheet and nothing else.
+      document.querySelectorAll("#admin > section").forEach(function(s){ s.hidden = s.getAttribute("aria-labelledby") !== "deckTitle"; });
+      $(".top h1").textContent = "Breathe Arabic: check words";
+      document.title = "Breathe Arabic: check words";
+      $("#deckTitle").textContent = "New words from the sheet";
+      initDeck();
+      return;
+    }
     loadMembers(); loadEngagement(); initDeck(); initBackup(); loadLibrary();
   });
 }).catch(function(e){ $("#gate").innerHTML = "<p>Couldn't load: " + esc(e.message) + "</p>"; });
@@ -377,9 +387,12 @@ function renderMembers(){
   $("#members").innerHTML = list.map(function(x){
     var a = accessLabel(x.m), m = x.m || {};
     var until = m.status && m.status !== "free" ? (m.current_period_end ? day(m.current_period_end) : (m.status === "comp" ? "lifetime" : "")) : "";
-    return '<tr><td>' + esc(x.email) + (x.role === "admin" ? ' <span class="tag comp">admin</span>' : "") + '</td><td>' + day(x.created_at) + '</td>' +
+    var roleBtn = x.role === "admin" ? "" : x.role === "editor"
+      ? '<button class="btn small" data-role="member" data-email="' + esc(x.email) + '" type="button">Remove editor</button>'
+      : '<button class="btn small" data-role="editor" data-email="' + esc(x.email) + '" type="button">Make editor</button>';
+    return '<tr><td>' + esc(x.email) + (x.role === "admin" ? ' <span class="tag comp">admin</span>' : x.role === "editor" ? ' <span class="tag active">editor</span>' : "") + '</td><td>' + day(x.created_at) + '</td>' +
       '<td><span class="tag ' + a[0] + '">' + a[1] + '</span></td><td>' + esc(until) + '</td><td>' + esc(m.note || "") + '</td>' +
-      '<td>' + (m.status === "comp" ? '<button class="btn small" data-revoke="' + esc(x.email) + '" type="button">Remove gift</button>' : "") + '</td></tr>';
+      '<td><span class="row-actions" style="margin:0">' + (m.status === "comp" ? '<button class="btn small" data-revoke="' + esc(x.email) + '" type="button">Remove gift</button>' : "") + roleBtn + '</span></td></tr>';
   }).join("") || '<tr><td colspan="6">No members yet.</td></tr>';
 }
 function renderPending(){
@@ -431,6 +444,15 @@ $("#revokeBtn").addEventListener("click", function(){
 document.addEventListener("click", function(e){
   var b = e.target.closest("[data-revoke]");
   if (b && confirm("Remove the gift for " + b.dataset.revoke + "?")) revoke(b.dataset.revoke);
+  // Editors can check and publish new words from the sheet; nothing else on this page.
+  var r = e.target.closest("[data-role]");
+  if (!r) return;
+  var email = r.dataset.email, toEditor = r.dataset.role === "editor";
+  if (!confirm(toEditor ? "Make " + email + " an editor? They'll be able to check and publish new words from the sheet." : "Stop " + email + " being an editor?")) return;
+  check(sb.rpc("set_role", {target_email:email, new_role:r.dataset.role})).then(function(){
+    setMsg($("#giftMsg"), toEditor ? email + " is now an editor. They'll see \"Check words\" on their home screen next time they open the app." : email + " is no longer an editor.", "ok");
+    loadMembers();
+  }).catch(function(err){ setMsg($("#giftMsg"), "Couldn't change the role: " + err.message + " (run 014_editor_role.sql in Supabase)", "bad"); });
 });
 
 /* ---------- deck publishing ---------- */

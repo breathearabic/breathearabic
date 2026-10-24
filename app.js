@@ -192,7 +192,7 @@ function fetchAll(table, cols, order){
 function loadRemote(){
   var uid = user.id;
   return Promise.all([
-    fetchAll("cards", "id,deck,level,word_type,arabic,english,examples,sort_order,is_free", "sort_order"),
+    fetchAll("cards", "id,deck,level,word_type,arabic,english,examples,sort_order,is_free,is_active", "sort_order"),
     fetchAll("progress", "card_id,state", "card_id"),
     check(sb.from("memberships").select("*").eq("user_id", uid).maybeSingle()),
     check(sb.from("profiles").select("id,email,display_name,role").eq("id", uid).maybeSingle()),
@@ -201,7 +201,7 @@ function loadRemote(){
   ]).then(function(res){
     if (!user || user.id !== uid) return;
     if (res[5]) { activity = {}; addActivity(res[5]); lsSet(ukey("activity"), activity); }
-    setCards(res[0].map(toCard));
+    setCards(res[0].filter(function(c){ return c.is_active !== false; }).map(toCard));   // editors can also see retired words
     var p = {};
     res[1].forEach(function(r){ if (byId.has(r.card_id) && validState(r.state)) p[r.card_id] = r.state; });
     // Answers still waiting to be sent win over what the server has.
@@ -256,7 +256,7 @@ function refresh(){
 /* ---------- membership and locked levels ---------- */
 function hasAccess(){
   var m = member;
-  if (profile && profile.role === "admin") return true;
+  if (profile && (profile.role === "admin" || profile.role === "editor")) return true;   // editors can read the whole deck anyway
   if (!m) return false;
   var end = m.current_period_end ? Date.parse(m.current_period_end) : null, now = Date.now();
   if ((m.status === "active" || m.status === "comp") && (end == null || end > now)) return true;
@@ -1299,6 +1299,20 @@ function readerAllowed(){
   return access === "everyone" || (access === "admin" && !!profile && profile.role === "admin");
 }
 /* ---------- home dashboard ---------- */
+// Learning words due later today can be done now (study learns ahead to the end of the day), so they count as work.
+function learnAheadToday(q, now){ var dayEnd = dayStart(now) + DAY; return q.learnLater.filter(function(c){ return state(c.id).due < dayEnd; }).length; }
+// Today's work left in deck d: reviews and learning words due, new words still allowed, and learning words due later today.
+function deckToday(d, now){
+  var keep = prefs.deck; prefs.deck = d;
+  var q = queueInfo(now), work = q.learnDue.length + q.revDue.length + q.newShown + learnAheadToday(q, now);
+  prefs.deck = keep;
+  return {work: work};
+}
+var homeDeckPicked = false;
+document.addEventListener("click", function(e){
+  var b = e.target.closest("[data-home-deck]");
+  if (b) { setDeck(b.dataset.homeDeck); renderHome(); }
+});
 function renderHome(){
   if (!user) return;
   var now = Date.now(), today = dayNum(now);
@@ -1311,17 +1325,26 @@ function renderHome(){
 
   if (!CARDS.length) return;
   if (!DECKS[prefs.deck]) prefs.deck = "main";
-  $("#todayDeck").textContent = DECKS[prefs.deck].name;
+  // Today shows one deck at a time, with a switch that says how much is left in each. On the first look this
+  // visit, it opens on a deck that still has work if the chosen one is finished.
+  var left = {};
+  Object.keys(DECKS).forEach(function(d){ left[d] = deckToday(d, now).work; });
+  if (!homeDeckPicked && !left[prefs.deck]) {
+    var other = Object.keys(DECKS).filter(function(d){ return left[d]; })[0];
+    if (other) setDeck(other);
+  }
+  homeDeckPicked = true;
+  $("#todayDecks").innerHTML = Object.keys(DECKS).map(function(d){
+    return '<button type="button" role="tab" data-home-deck="' + d + '" aria-selected="' + (d === prefs.deck) + '">' + esc(DECKS[d].name) +
+      ' <span class="deck-left">' + (left[d] ? left[d] : "✓") + '</span></button>';
+  }).join("");
   var q = queueInfo(now);
   var due = q.learnDue.length + q.revDue.length, fresh = q.newShown, learning = q.learnDue.length + q.learnLater.length;
   $("#todayStats").innerHTML =
     '<div class="stat due"><b>' + due + '</b><span>to review</span></div>' +
     '<div class="stat new"><b>' + fresh + '</b><span>new words</span></div>' +
     '<div class="stat lrn"><b>' + learning + '</b><span>learning</span></div>';
-  // Learning words due later today can be done now (study learns ahead to the end of the day), so they count as work.
-  var dayEnd = dayStart(now) + DAY;
-  var ahead = q.learnLater.filter(function(c){ return state(c.id).due < dayEnd; }).length;
-  var work = due + fresh + ahead;
+  var ahead = learnAheadToday(q, now), work = due + fresh + ahead;
   $("#todayEta").textContent = work ? "about " + Math.max(1, Math.round(((due + ahead) * 8 + fresh * 15) / 60)) + " min" : "";
   var cta;
   if (work) cta = '<a class="btn primary" href="#study/cards">' + (due ? "Start studying" : fresh ? "Learn new words" : "Finish today's words") + '</a><a class="btn" href="#study/quiz">Quiz</a>';
@@ -1334,6 +1357,8 @@ function renderHome(){
   }
   if (onlyLockedChosen()) cta = '<p class="note">The levels you\'ve chosen are for members.</p><a class="btn primary" href="#study/cards">Choose levels</a>';
   $("#todayCta").innerHTML = cta;
+  // Today's buttons go straight into the deck shown, without asking which deck.
+  $("#todayCta").querySelectorAll("a[href^='#study']").forEach(function(a){ a.dataset.deck = prefs.deck; });
 
   // Streak: days in a row with at least one answer (today counts once you've answered something).
   var counts = activityCounts(), d = counts[today] ? today : today - 1, streak = 0;
@@ -1357,7 +1382,9 @@ function renderHome(){
   $("#tileRead").hidden = !reader;
   if (reader && last && last.id) { $("#tileRead").setAttribute("href", "read#t=" + encodeURIComponent(last.id)); $("#tileReadSub").textContent = "Continue: " + last.title; }
   else { $("#tileRead").setAttribute("href", "read"); $("#tileReadSub").textContent = "Tap any word for its meaning"; }
-  $("#tileAdmin").hidden = !(profile && profile.role === "admin");
+  var role = profile && profile.role;
+  $("#tileAdmin").hidden = role !== "admin" && role !== "editor";
+  if (role === "editor") $("#tileAdmin").querySelector("span:last-child").innerHTML = "<b>Check words</b><small>New words from the sheet: meanings and levels</small>";
 
   // Progress by level.
   var learnedAll = 0, html = "";
