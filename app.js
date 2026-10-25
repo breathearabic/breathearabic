@@ -267,6 +267,9 @@ function refresh(){
 }
 
 /* ---------- membership and locked levels ---------- */
+// Admins and editors can fix deck cards: an Edit link opens the card in the admin page's Flashcards editor.
+function canEditCards(c){ return !!profile && (profile.role === "admin" || profile.role === "editor") && !!c && !c.mine && !/^u-/.test(c.id); }
+function editCardLink(c, cls){ return canEditCards(c) ? '<a class="' + cls + '" href="admin.html#card=' + encodeURIComponent(c.id) + '">Edit card</a>' : ""; }
 function hasAccess(){
   var m = member;
   if (profile && (profile.role === "admin" || profile.role === "editor")) return true;   // editors can read the whole deck anyway
@@ -736,7 +739,7 @@ function renderCard(){
   var html2 = '<div class="meta">' + countsHtml + '<span class="meta-right">' + undoHtml + '</span></div>';
   html2 += '<div class="card' + (fc.flip ? " flip" : "") + '" id="card" tabindex="0" role="button" aria-label="' + (fc.revealed ? "Card" : "Show answer") + '">';
   fc.flip = false;
-  html2 += '<div class="card-top"><span class="pill lv' + c.lv + '">' + LV[c.lv] + '</span><span class="tytag">' + TY[c.ty] + '</span>' + stageTag(c.id) + '<button class="listen" data-act="speak" type="button" aria-label="Listen to the Arabic">Listen</button></div>';
+  html2 += '<div class="card-top"><span class="pill lv' + c.lv + '">' + LV[c.lv] + '</span><span class="tytag">' + TY[c.ty] + '</span>' + stageTag(c.id) + editCardLink(c, "edit-card") + '<button class="listen" data-act="speak" type="button" aria-label="Listen to the Arabic">Listen</button></div>';
   html2 += arFirst
     ? '<div class="prompt is-ar' + arSizeClass(c.ar) + '" lang="ar">' + esc(c.ar) + '</div>'
     : '<div class="prompt is-en">' + esc(c.en) + '</div>';
@@ -954,7 +957,7 @@ function renderList(){
         '<div class="row-ar" lang="ar">' + esc(c.ar) + '</div></div>';
       if (openRows[c.id]) {
         html += '<div class="row-ex">' + (c.ex.length ? exHtml(c, "") : '<p class="ex-en">No example sentence for this one yet.</p>') +
-          '<p class="mem">' + esc(memoryLine(c.id, now)) + '</p>' +
+          '<p class="mem">' + esc(memoryLine(c.id, now)) + '</p>' + editCardLink(c, "link") +
           (s ? '<button class="btn" data-act="forget" type="button">Reset this word to new</button>' : "") +
           (c.mine ? '<div class="mine-tools"><label>Level <select data-act="relevel">' + [1,2,3,4,5,6].map(function(l){ return '<option value="' + l + '"' + (l === c.lv ? " selected" : "") + '>' + LV[l] + '</option>'; }).join("") + '</select></label>' +
             '<button class="link danger" data-act="unsave" type="button">Remove from my saved words</button></div>' : "") + '</div>';

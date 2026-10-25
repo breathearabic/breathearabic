@@ -206,6 +206,22 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
       <div id="deckReview"></div>
     </section>
 
+    <section class="box" aria-labelledby="cardsTitle">
+      <h2 id="cardsTitle">Flashcards</h2>
+      <p>Find any card in either deck and fix it: the Arabic, the meaning, the level, the type, the category and the example sentences. Changes reach learners the next time they open the app.</p>
+      <div class="row-actions" style="margin-top:0">
+        <input type="search" id="cardSearch" placeholder="Search Arabic or English" aria-label="Search cards" style="flex:1;min-width:200px">
+        <select id="cardDeck" aria-label="Deck"><option value="">Both decks</option><option value="main">General Vocabulary</option><option value="islamic">Islamic terms</option></select>
+        <label style="display:flex;gap:6px;align-items:center;font-size:.85rem;color:var(--muted)"><input type="checkbox" id="cardRetired"> Include retired</label>
+      </div>
+      <p class="msg" id="cardMsg" aria-live="polite"></p>
+      <div class="tablewrap" id="cardListWrap"><table>
+        <thead><tr><th>Arabic</th><th>Meaning</th><th>Level</th><th>Deck</th><th></th></tr></thead>
+        <tbody id="cardList"></tbody>
+      </table></div>
+      <div id="cardForm" class="lform" hidden></div>
+    </section>
+
     <section class="box" aria-labelledby="lessonsTitle">
       <h2 id="lessonsTitle">Lessons</h2>
       <p>Short lessons for the Learn tab: a few sentences of story (each with its English), the key words, and comprehension questions. Learners see a lesson once it's published. A1 and A2 lessons are free; B1 and up are for members unless you tick Free.</p>
@@ -302,14 +318,14 @@ sb.auth.getSession().then(function(r){
     $("#gate").hidden = true; $("#admin").hidden = false;
     if (role === "editor") {
       // Editors check words from the sheet and write lessons, nothing else.
-      document.querySelectorAll("#admin > section").forEach(function(s){ var t = s.getAttribute("aria-labelledby"); s.hidden = t !== "deckTitle" && t !== "lessonsTitle"; });
+      document.querySelectorAll("#admin > section").forEach(function(s){ var t = s.getAttribute("aria-labelledby"); s.hidden = t !== "deckTitle" && t !== "lessonsTitle" && t !== "cardsTitle"; });
       $(".top h1").textContent = "Breathe Arabic: words and lessons";
       document.title = "Breathe Arabic: words and lessons";
       $("#deckTitle").textContent = "New words from the sheet";
-      initDeck(); loadLessons();
+      initDeck(); loadLessons(); loadCards();
       return;
     }
-    loadMembers(); loadEngagement(); initDeck(); loadLessons(); initBackup(); loadLibrary();
+    loadMembers(); loadEngagement(); initDeck(); loadLessons(); loadCards(); initBackup(); loadLibrary();
   });
 }).catch(function(e){ $("#gate").innerHTML = "<p>Couldn't load: " + esc(e.message) + "</p>"; });
 
@@ -662,6 +678,97 @@ function publish(){
     $("#deckReview").innerHTML = '<p class="msg ok">Published: ' + esc(parts.join(", ") || "nothing changed") + '. Members see the changes next time they open the app.</p>';
   }).catch(function(err){ setMsg(msg, "Publishing failed: " + err.message + ". Nothing you typed is lost; try again.", "bad"); btn.disabled = false; });
 }
+
+/* ---------- flashcards: find and fix any deck card ---------- */
+var CARD_TOPICS = [["", "None"], ["aqeedah", "Creed and sects"], ["usul", "Principles of jurisprudence"], ["fiqh", "Jurisprudence and worship"],
+  ["hadith", "Narrations and Quran sciences"], ["tazkiyah", "Purifying the soul and character"], ["history", "History and governance"], ["thought", "Contemporary thought and society"]];
+var allCards = [], cardEd = null;
+function arKey(s){ return String(s || "").replace(/[ً-ٰٟـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه"); }
+function loadCards(){
+  fetchAll("cards", "id,deck,topic,level,word_type,arabic,english,examples,is_free,is_active,owner_id,sort_order", "sort_order").then(function(rows){
+    allCards = rows.filter(function(c){ return !c.owner_id; });   // learners' own saved words are theirs to edit
+    renderCardList();
+    var m = /^#card=([\w-]+)$/.exec(location.hash), c = m && allCards.filter(function(x){ return x.id === m[1]; })[0];
+    if (c && !cardEd) { openCard(c); history.replaceState(null, "", location.pathname); }
+  }).catch(function(e){ setMsg($("#cardMsg"), "Couldn't load cards: " + e.message, "bad"); });
+}
+function renderCardList(){
+  var q = $("#cardSearch").value.trim(), qa = arKey(q), ql = q.toLowerCase(), deck = $("#cardDeck").value, retired = $("#cardRetired").checked;
+  var list = allCards.filter(function(c){
+    return (!deck || c.deck === deck) && (retired || c.is_active) &&
+      (!q || arKey(c.arabic).indexOf(qa) > -1 || String(c.english).toLowerCase().indexOf(ql) > -1);
+  });
+  $("#cardList").innerHTML = (q || deck ? list.slice(0, 60) : list.slice(0, 20)).map(function(c){
+    return '<tr' + (c.is_active ? "" : ' style="opacity:.55"') + '><td class="ar" style="font-size:1.15rem">' + esc(c.arabic) + '</td><td>' + esc(c.english) + (c.is_active ? "" : ' <span class="tag">retired</span>') + '</td>' +
+      '<td>' + LVL[c.level] + '</td><td>' + (c.deck === "islamic" ? "Islamic" : "General") + '</td>' +
+      '<td><button class="btn small" type="button" data-edit-card="' + c.id + '">Edit</button></td></tr>';
+  }).join("") || '<tr><td colspan="5">No cards match.</td></tr>';
+  setMsg($("#cardMsg"), list.length > 60 ? "Showing 60 of " + list.length + ". Search to narrow it down." : !q && !deck ? "Search for a card, or pick a deck." : "");
+}
+["input", "change"].forEach(function(ev){
+  $("#cardSearch").addEventListener(ev, renderCardList); $("#cardDeck").addEventListener(ev, renderCardList); $("#cardRetired").addEventListener(ev, renderCardList);
+});
+function openCard(c){
+  cardEd = JSON.parse(JSON.stringify(c));
+  cardEd.examples = Array.isArray(cardEd.examples) ? cardEd.examples : [];
+  $("#cardListWrap").hidden = true; $("#cardForm").hidden = false;
+  renderCardForm(); $("#cardForm").scrollIntoView({block:"start"});
+}
+function closeCard(){ cardEd = null; $("#cardForm").hidden = true; $("#cardListWrap").hidden = false; }
+function cardField(path, value, ar, label, area){
+  var a = ' data-cf="' + path + '"' + (ar ? ' class="ar-in" dir="rtl" lang="ar"' : "") + ' aria-label="' + esc(label) + '"';
+  return area ? '<textarea' + a + '>' + esc(value || "") + '</textarea>' : '<input type="text"' + a + ' value="' + esc(value || "") + '">';
+}
+function renderCardForm(){
+  var c = cardEd, lvOpts = [1,2,3,4,5,6].map(function(n){ return [n, LVL[n]]; });
+  $("#cardForm").innerHTML = '<h3>Edit card <span class="muted" style="font-weight:400">(' + (c.deck === "islamic" ? "Islamic terms" : "General Vocabulary") + ', ' + esc(c.id) + ')</span></h3>' +
+    '<div class="lgrid"><label>Arabic' + cardField("arabic", c.arabic, true, "Arabic") + '</label><label style="grid-column:span 2">Meaning in English' + cardField("english", c.english, false, "Meaning") + '</label></div>' +
+    '<div class="lgrid"><label>Level' + selectCf("level", c.level, lvOpts, "Level") + '</label><label>Type' + selectCf("word_type", c.word_type, TYPES, "Type") + '</label>' +
+    (c.deck === "islamic" ? '<label style="grid-column:span 2">Category' + selectCf("topic", c.topic || "", CARD_TOPICS, "Category") + '</label>' : "") +
+    '<div class="checks"><label><input type="checkbox" data-cf="is_active"' + (c.is_active ? " checked" : "") + '> In use (untick to retire)</label></div></div>' +
+    '<h3>Example sentences</h3>' +
+    c.examples.map(function(e, i){
+      return '<div class="lrow">' + cardField("examples." + i + ".0", e[0], true, "Example " + (i + 1) + " in Arabic", true) + cardField("examples." + i + ".1", e[1], false, "Example " + (i + 1) + " in English") +
+        '<button class="btn small" type="button" data-cop="del-ex" data-i="' + i + '">Remove</button></div>';
+    }).join("") +
+    '<div><button class="btn small" type="button" data-cop="add-ex">Add example</button></div>' +
+    '<div class="row-actions"><button class="btn primary" type="button" data-cop="save">Save card</button><button class="btn" type="button" data-cop="cancel">Cancel</button></div>';
+}
+function selectCf(path, value, options, label){
+  return '<select data-cf="' + path + '" aria-label="' + esc(label) + '">' + options.map(function(o){ return '<option value="' + o[0] + '"' + (String(o[0]) === String(value) ? " selected" : "") + '>' + o[1] + '</option>'; }).join("") + '</select>';
+}
+$("#cardForm").addEventListener("input", function(e){
+  var f = e.target.closest("[data-cf]"); if (!f || !cardEd) return;
+  var parts = f.dataset.cf.split("."), v = f.type === "checkbox" ? f.checked : f.dataset.cf === "level" ? +f.value : f.value;
+  if (parts[0] === "examples") cardEd.examples[+parts[1]][+parts[2]] = v; else cardEd[parts[0]] = v;
+});
+$("#cardForm").addEventListener("click", function(e){
+  var b = e.target.closest("[data-cop]"); if (!b || !cardEd) return;
+  var op = b.dataset.cop;
+  if (op === "add-ex") { cardEd.examples.push(["", ""]); renderCardForm(); }
+  if (op === "del-ex") { cardEd.examples.splice(+b.dataset.i, 1); renderCardForm(); }
+  if (op === "cancel") closeCard();
+  if (op === "save") saveCard();
+});
+function saveCard(){
+  var c = cardEd, msg = $("#cardMsg"), t = function(x){ return String(x || "").trim(); };
+  var row = {arabic:t(c.arabic), english:t(c.english), level:+c.level, word_type:c.word_type, is_active:!!c.is_active, updated_at:new Date().toISOString(),
+    examples:c.examples.map(function(e){ return [t(e[0]), t(e[1])]; }).filter(function(e){ return e[0]; })};
+  if (c.deck === "islamic") row.topic = c.topic || null;
+  if (!row.arabic || !row.english) return setMsg(msg, "A card needs its Arabic and its meaning.", "bad");
+  if (row.examples.some(function(e){ return !e[1]; })) return setMsg(msg, "Give every example sentence its English.", "bad");
+  setMsg(msg, "Saving…");
+  check(sb.from("cards").update(row).eq("id", c.id)).then(function(){
+    var i = allCards.findIndex(function(x){ return x.id === c.id; });
+    if (i > -1) allCards[i] = Object.assign({}, allCards[i], row);
+    setMsg(msg, "Saved: " + row.arabic + " = " + row.english + ". Learners get the change next time they open the app.", "ok");
+    closeCard(); renderCardList();
+  }).catch(function(err){ setMsg(msg, "Couldn't save: " + err.message, "bad"); });
+}
+document.addEventListener("click", function(e){
+  var b = e.target.closest("[data-edit-card]");
+  if (b) { var c = allCards.filter(function(x){ return x.id === b.dataset.editCard; })[0]; if (c) openCard(c); }
+});
 
 /* ---------- lessons (the Learn tab; table "lessons", 015_lessons.sql) ---------- */
 var LVL = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
