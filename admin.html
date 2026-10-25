@@ -682,6 +682,9 @@ function glossFor(glosses, w){
 function loadLessons(){
   check(sb.from("lessons").select("*").order("level").order("unit").order("position")).then(function(r){
     lessonRows = r.data || []; renderLessonList();
+    // Opened from a lesson's Edit lesson button (admin.html#lesson=<id>): go straight to that lesson.
+    var m = /^#lesson=([\w-]+)$/.exec(location.hash), l = m && lessonRows.filter(function(x){ return x.id === m[1]; })[0];
+    if (l && !ed) { openLesson(l); history.replaceState(null, "", location.pathname); }
   }).catch(function(e){ setMsg($("#lessonMsg"), "Couldn't load lessons: " + e.message + " (run 015_lessons.sql in Supabase)", "bad"); });
 }
 function renderLessonList(){

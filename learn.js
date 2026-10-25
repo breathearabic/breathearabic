@@ -36,6 +36,8 @@ function readerAllowed(){
   return access === "everyone" || (access === "admin" && !!profile && profile.role === "admin");
 }
 function canOpen(l){ return l.is_free || hasAccess(); }
+// Admins and editors get an Edit lesson button that opens the lesson in the admin page's editor.
+function canEdit(){ return !!profile && (profile.role === "admin" || profile.role === "editor"); }
 
 /* ---------- matching story words to key words (ignores vowels, و/ف/ب/ل and ال at the front) ---------- */
 function bare(s){
@@ -148,7 +150,7 @@ function renderList(){
   }).join("") + '</div>';
   var mine = index.filter(function(l){ return l.level === lv; });
   var finished = mine.filter(function(l){ return done[l.id]; }).length;
-  var html = tabs + '<div class="lvprog"><span>' + LV[lv] + ' ' + LV_NAME[lv] + ' · ' + finished + ' of ' + mine.length + ' lesson' + (mine.length === 1 ? "" : "s") + ' done</span>' +
+  var html = tabs + '<div class="lvprog" style="--lvc:var(--lv' + lv + ')"><span>' + LV[lv] + ' ' + LV_NAME[lv] + ' · ' + finished + ' of ' + mine.length + ' lesson' + (mine.length === 1 ? "" : "s") + ' done</span>' +
     '<span class="bar"><i style="width:' + (mine.length ? Math.round(finished / mine.length * 100) : 0) + '%"></i></span></div>';
   var units = [];
   mine.forEach(function(l){ var u = units[units.length - 1]; if (!u || u.unit !== l.unit) units.push(u = {unit:l.unit, title:l.unit_title, items:[]}); u.items.push(l); });
@@ -178,7 +180,8 @@ var cur = null;   // the lesson on screen
 function head(l, step){
   var meta = index.filter(function(x){ return x.id === l.id; })[0] || l;
   return '<div class="lhead"><a class="back" href="#" aria-label="Back to lessons"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></a>' +
-    '<span class="steps" aria-label="Step ' + step + ' of 2"><i class="on"></i><i' + (step > 1 ? ' class="on"' : "") + '></i></span></div>' +
+    '<span class="steps" aria-label="Step ' + step + ' of 2"><i class="on"></i><i' + (step > 1 ? ' class="on"' : "") + '></i></span>' +
+    (canEdit() ? '<a class="iconbtn" href="admin.html#lesson=' + encodeURIComponent(l.id) + '" style="text-decoration:none">Edit lesson</a>' : "") + '</div>' +
     '<div class="ltitle"><small>' + LV[l.level] + ' · Unit ' + l.unit + ' · Lesson ' + meta.position + '</small><h1>' + esc(l.title_ar) + '</h1><p>' + esc(l.title_en) + '</p></div>';
 }
 // Every word is tappable, and underlined by how well the learner knows it (same colours as the Read page).

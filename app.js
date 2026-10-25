@@ -59,6 +59,19 @@ var PREF_KEY = "arvocab-prefs-v1", LEGACY_PROG_KEY = "arvocab-progress-v1", LEGA
 var prefs = Object.assign({deck:"main", levels:[1,2,3,4,5,6], mode:"cards", type:"all", dir:"ar", qlen:10, newPerDay:20, extra:null}, lsGet(PREF_KEY) || {});
 prefs.levels = (prefs.levels || []).filter(function(l){ return l >= 1 && l <= 6; });
 if (!prefs.levels.length || !prefs.allLevelsDefault) { prefs.levels = [1,2,3,4,5,6]; prefs.allLevelsDefault = true; lsSet(PREF_KEY, prefs); }
+// The Islamic deck is chosen by category (the teacher's chapters) instead of by CEFR level.
+var TOPICS = [
+  {k:"aqeedah", ar:"الْعَقِيدَة", en:"Creed and sects"},
+  {k:"usul", ar:"أُصُولُ الْفِقْه", en:"Principles of jurisprudence"},
+  {k:"fiqh", ar:"الْفِقْه", en:"Jurisprudence and worship"},
+  {k:"hadith", ar:"الْحَدِيثُ وَعُلُومُ الْقُرْآن", en:"Narrations and Quran sciences"},
+  {k:"tazkiyah", ar:"التَّزْكِيَةُ وَالْأَخْلَاق", en:"Purifying the soul and character"},
+  {k:"history", ar:"التَّارِيخُ وَالسِّيَاسَة", en:"History and governance"},
+  {k:"thought", ar:"الْفِكْرُ الْمُعَاصِر", en:"Contemporary thought and society"}
+];
+var TOPIC_KEYS = TOPICS.map(function(t){ return t.k; });
+prefs.topics = (prefs.topics || []).filter(function(k){ return TOPIC_KEYS.indexOf(k) > -1; });
+if (!prefs.topics.length) prefs.topics = TOPIC_KEYS.slice();
 function savePrefs(){ lsSet(PREF_KEY, prefs); }
 
 function validState(s){
@@ -171,7 +184,7 @@ function tidySentence(s){
     .replace(/^[،,.;:\-–—]\s*/, "").replace(/\s*[،,;:\-–—]$/, "");
   return ref ? t + " " + ref.trim() : t;
 }
-function toCard(r){ return {id:r.id, deck:r.deck || "main", ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, ex:Array.isArray(r.examples) ? r.examples.map(function(e){ return [tidySentence(e[0]).replace(/[.۔]+$/, ""), tidySentence(e[1])]; }) : [], so:r.sort_order, free:r.is_free}; }
+function toCard(r){ return {id:r.id, deck:r.deck || "main", ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, ex:Array.isArray(r.examples) ? r.examples.map(function(e){ return [tidySentence(e[0]).replace(/[.۔]+$/, ""), tidySentence(e[1])]; }) : [], so:r.sort_order, free:r.is_free, tp:r.topic || ""}; }
 function setCards(list){
   // Words saved on the Read page have ids starting "u-".
   list.forEach(function(c){ c.mine = /^u-/.test(c.id); });
@@ -192,7 +205,7 @@ function fetchAll(table, cols, order){
 function loadRemote(){
   var uid = user.id;
   return Promise.all([
-    fetchAll("cards", "id,deck,level,word_type,arabic,english,examples,sort_order,is_free,is_active", "sort_order"),
+    fetchAll("cards", "id,deck,topic,level,word_type,arabic,english,examples,sort_order,is_free,is_active", "sort_order"),
     fetchAll("progress", "card_id,state", "card_id"),
     check(sb.from("memberships").select("*").eq("user_id", uid).maybeSingle()),
     check(sb.from("profiles").select("id,email,display_name,role").eq("id", uid).maybeSingle()),
@@ -265,7 +278,7 @@ function hasAccess(){
 }
 // Deck counts leave out the learner's own saved words (from the Read page).
 // Two decks: the main vocabulary and the Islamic terms. Everything below works on the chosen one.
-var DECKS = {main:{name:"General Vocabulary", sub:"Everyday Arabic to strengthen your comprehension and fluency"}, islamic:{name:"Quran and Islamic terms", sub:"The most common vocabulary from the Quran and Islamic texts"}};
+var DECKS = {main:{name:"General Vocabulary", sub:"Everyday Arabic to strengthen your comprehension and fluency"}, islamic:{name:"Islamic terms", sub:"Key terms for reading Islamic books: creed, jurisprudence, hadith, history and modern ideas"}};
 function inDeck(c){ return (c.deck || "main") === prefs.deck; }
 function deckVisible(lv){ return CARDS.filter(function(c){ return c.lv === lv && !c.mine && inDeck(c); }).length; }
 function mineCount(lv){ return CARDS.filter(function(c){ return c.lv === lv && c.mine && inDeck(c); }).length; }
@@ -279,7 +292,7 @@ function levelTotal(lv){
 function sourceOk(c){ return prefs.source === "mine" ? c.mine : prefs.source === "hard" ? isHard(state(c.id)) : true; }
 function filtered(){ return prefs.source === "mine" || prefs.source === "hard"; }
 function isLocked(lv){ return !filtered() && levelTotal(lv) > deckVisible(lv); }
-function lockedSelected(){ return prefs.levels.filter(isLocked).sort(); }
+function lockedSelected(){ return byTopic() ? [] : prefs.levels.filter(isLocked).sort(); }   // the Islamic deck is all free
 function lockedWordCount(levels){ return levels.reduce(function(n, lv){ return n + levelTotal(lv) - deckVisible(lv); }, 0); }
 
 /* ---------- queues ---------- */
@@ -288,9 +301,19 @@ function typeOk(c){
   if (prefs.type === "other") return c.ty === "d" || c.ty === "r";
   return c.ty === prefs.type;
 }
-function pool(){ return CARDS.filter(function(c){ return inDeck(c) && prefs.levels.indexOf(c.lv) > -1 && typeOk(c) && sourceOk(c); }); }
+function byTopic(){ return prefs.deck === "islamic"; }
+// A learner's own saved words have no category, so they count in every category.
+function topicOk(c){ return !c.tp || TOPIC_KEYS.indexOf(c.tp) < 0 || prefs.topics.indexOf(c.tp) > -1; }
+function pool(){ return CARDS.filter(function(c){ return inDeck(c) && (byTopic() ? topicOk(c) : prefs.levels.indexOf(c.lv) > -1) && typeOk(c) && sourceOk(c); }); }
 function levelNames(){ return prefs.levels.slice().sort().map(function(l){ return LV[l]; }); }
-function levelLabel(cap){ return prefs.levels.length >= 6 ? (cap ? "All levels" : "all levels") : joinNames(levelNames()); }
+function levelLabel(cap){
+  if (byTopic()) {
+    var n = prefs.topics.length;
+    if (n >= TOPICS.length) return cap ? "All categories" : "all categories";
+    return n > 2 ? n + " of " + TOPICS.length + " categories" : joinNames(TOPICS.filter(function(t){ return prefs.topics.indexOf(t.k) > -1; }).map(function(t){ return t.en; }));
+  }
+  return prefs.levels.length >= 6 ? (cap ? "All levels" : "all levels") : joinNames(levelNames());
+}
 function joinNames(a){ return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
 // Each deck has its own new-words-a-day limit and its own count, e.g. 20 general words and 5 Quran words.
 function deckNewPerDay(){
@@ -378,7 +401,7 @@ function nextAvailableAt(now){
 var stairs = $("#stairs");
 for (var l = 1; l <= 6; l++) {
   var b = document.createElement("button");
-  b.type = "button"; b.className = "step"; b.dataset.lv = l; b.style.setProperty("--i", l - 1);
+  b.type = "button"; b.className = "step lv" + l; b.dataset.lv = l; b.style.setProperty("--i", l - 1);
   b.innerHTML = '<span class="fill"></span><span class="lv">' + LV[l] + '</span><span class="ct"></span>';
   stairs.appendChild(b);
 }
@@ -393,7 +416,28 @@ $("#allBtn").addEventListener("click", function(){
   prefs.levels = [1,2,3,4,5,6].filter(function(l){ return levelTotal(l) > 0; });
   savePrefs(); onFilterChange();
 });
+// Categories for the Islamic deck, in place of the level staircase.
+$("#topics").addEventListener("click", function(e){
+  var b = e.target.closest(".topic"); if (!b || b.disabled) return;
+  var i = prefs.topics.indexOf(b.dataset.topic);
+  if (i > -1) { if (prefs.topics.length > 1) prefs.topics.splice(i, 1); }
+  else prefs.topics.push(b.dataset.topic);
+  savePrefs(); onFilterChange();
+});
+$("#allTopicsBtn").addEventListener("click", function(){ prefs.topics = TOPIC_KEYS.slice(); savePrefs(); onFilterChange(); });
+function renderTopics(){
+  $("#topics").innerHTML = TOPICS.map(function(t){
+    var cs = CARDS.filter(function(c){ return inDeck(c) && c.tp === t.k && sourceOk(c); });
+    var learned = cs.filter(function(c){ return isKnown(state(c.id)); }).length;
+    return '<button type="button" class="topic" data-topic="' + t.k + '" aria-pressed="' + (prefs.topics.indexOf(t.k) > -1) + '"' + (cs.length ? "" : " disabled") + '>' +
+      '<span class="t-ar" lang="ar">' + esc(t.ar) + '</span><span class="t-en">' + esc(t.en) + '</span><span class="t-ct">' + learned + '/' + cs.length + ' known</span></button>';
+  }).join("");
+  var q = queueInfo(Date.now()), due = q.learnDue.length + q.revDue.length;
+  $("#topicSummary").textContent = levelLabel(true) + ": " + q.pool.length + " words. " + q.learned + " known, " + due + " due, " + q.fresh.length + " new.";
+}
 function renderStairs(){
+  $("#levelPicker").hidden = byTopic(); $("#topicPicker").hidden = !byTopic();
+  if (byTopic()) { renderTopics(); $("#lockBanner").hidden = true; return; }
   var steps = stairs.querySelectorAll(".step");
   for (var k = 0; k < steps.length; k++) {
     var b = steps[k], lv = +b.dataset.lv;
@@ -653,7 +697,7 @@ function renderCard(){
     if (!q.pool.length) {
       el.innerHTML = html + (prefs.source === "mine" && !CARDS.some(function(c){ return c.mine; })
         ? '<div class="panel-msg"><h2>No saved words yet</h2><p>On the Read page, tap a word you don\'t know and choose Save word. It will show up here.</p><div class="actions single"><a class="btn primary" href="read">Open Read</a></div></div>'
-        : '<div class="panel-msg"><h2>No words match</h2><p>Try another word type or add a level above.</p></div>');
+        : '<div class="panel-msg"><h2>No words match</h2><p>Try another word type or add a ' + (byTopic() ? "category" : "level") + ' above.</p></div>');
       return;
     }
     var lines = [];
@@ -692,7 +736,7 @@ function renderCard(){
   var html2 = '<div class="meta">' + countsHtml + '<span class="meta-right">' + undoHtml + '</span></div>';
   html2 += '<div class="card' + (fc.flip ? " flip" : "") + '" id="card" tabindex="0" role="button" aria-label="' + (fc.revealed ? "Card" : "Show answer") + '">';
   fc.flip = false;
-  html2 += '<div class="card-top"><span class="pill">' + LV[c.lv] + '</span><span class="tytag">' + TY[c.ty] + '</span>' + stageTag(c.id) + '<button class="listen" data-act="speak" type="button" aria-label="Listen to the Arabic">Listen</button></div>';
+  html2 += '<div class="card-top"><span class="pill lv' + c.lv + '">' + LV[c.lv] + '</span><span class="tytag">' + TY[c.ty] + '</span>' + stageTag(c.id) + '<button class="listen" data-act="speak" type="button" aria-label="Listen to the Arabic">Listen</button></div>';
   html2 += arFirst
     ? '<div class="prompt is-ar' + arSizeClass(c.ar) + '" lang="ar">' + esc(c.ar) + '</div>'
     : '<div class="prompt is-en">' + esc(c.en) + '</div>';
@@ -789,7 +833,7 @@ function renderQuizStart(){
   var p = pool(), el = $("#panel-quiz");
   if (onlyLockedChosen()) { el.innerHTML = membersOnlyHtml(); return; }
   if (p.length < 2) {
-    el.innerHTML = '<div class="panel-msg"><h2>Not enough words for a quiz</h2><p>Add another level or switch the word type back to All types.</p></div>';
+    el.innerHTML = '<div class="panel-msg"><h2>Not enough words for a quiz</h2><p>Add another ' + (byTopic() ? "category" : "level") + ' or switch the word type back to All types.</p></div>';
     return;
   }
   var lens = [10, 20, 40].filter(function(n){ return n < p.length; });
@@ -814,7 +858,7 @@ function renderQuestion(){
   var q = qz.qs[qz.i], c = byId.get(q.id), arFirst = prefs.dir === "ar";
   if (!c) { qz.qs = null; return renderQuizStart(); }
   var html = '<div class="meta"><span>Question ' + (qz.i + 1) + ' of ' + qz.qs.length + '</span><span>' + qz.score + ' correct</span></div>';
-  html += '<div class="qprompt"><div class="card-top"><span class="pill">' + LV[c.lv] + '</span><span class="tytag">' + TY[c.ty] + '</span><button class="listen" data-act="speak" type="button" aria-label="Listen to the Arabic" style="margin-left:auto">Listen</button></div>';
+  html += '<div class="qprompt"><div class="card-top"><span class="pill lv' + c.lv + '">' + LV[c.lv] + '</span><span class="tytag">' + TY[c.ty] + '</span><button class="listen" data-act="speak" type="button" aria-label="Listen to the Arabic" style="margin-left:auto">Listen</button></div>';
   html += arFirst ? '<div class="prompt is-ar' + arSizeClass(c.ar) + '" lang="ar">' + esc(c.ar) + '</div>' : '<div class="prompt is-en">' + esc(c.en) + '</div>';
   html += '</div><div class="opts" role="group" aria-label="Answers">';
   q.opts.forEach(function(id, k){
@@ -883,18 +927,23 @@ function renderList(){
   var cards = pool().filter(function(c){ return !q || norm(c.ar).indexOf(q) > -1 || c.en.toLowerCase().indexOf(q) > -1; });
   var el = $("#list");
   var lockedLv = lockedSelected();
-  if (!cards.length && !lockedLv.length) { el.innerHTML = '<div class="panel-msg"><h2>No matches</h2><p>' + (q ? "Nothing in " + levelLabel() + " matches that search. Try fewer letters or add a level." : "Try another word type or add a level above.") + '</p></div>'; return; }
+  if (!cards.length && !lockedLv.length) { el.innerHTML = '<div class="panel-msg"><h2>No matches</h2><p>' + (q ? "Nothing in " + levelLabel() + " matches that search. Try fewer letters or add a " + (byTopic() ? "category" : "level") + "." : "Try another word type or add a level above.") + '</p></div>'; return; }
   var html = "";
-  [1,2,3,4,5,6].forEach(function(lv){
-    var group = cards.filter(function(c){ return c.lv === lv; });
+  // Groups: CEFR levels, or the teacher's categories in the Islamic deck.
+  var groups = byTopic()
+    ? TOPICS.map(function(t){ return {head:esc(t.en) + ' · <span lang="ar" style="font-family:var(--ar)">' + esc(t.ar) + '</span>', cls:"", of:function(c){ return c.tp === t.k; }}; })
+        .concat([{head:"Your saved words", cls:"", of:function(c){ return TOPIC_KEYS.indexOf(c.tp) < 0; }}])
+    : [1,2,3,4,5,6].map(function(lv){ return {lv:lv, head:LV[lv], cls:" lv" + lv, of:function(c){ return c.lv === lv; }}; });
+  groups.forEach(function(g){
+    var lv = g.lv, group = cards.filter(g.of);
     if (lockedLv.indexOf(lv) > -1 && !group.length) {
-      html += '<h3 class="lvhead">' + LV[lv] + ' <span>' + levelTotal(lv) + ' words</span></h3>' +
+      html += '<h3 class="lvhead lv' + lv + '">' + LV[lv] + ' <span>' + levelTotal(lv) + ' words</span></h3>' +
         '<div class="row locked-row"><p>Members only. <button class="link" data-act="subscribe" type="button">Subscribe</button> to study these words.</p></div>';
       return;
     }
     if (!group.length) return;
     group.sort(function(a, b){ return a.en.localeCompare(b.en); });
-    html += '<h3 class="lvhead">' + LV[lv] + ' <span>' + group.length + ' word' + (group.length === 1 ? "" : "s") + '</span></h3>';
+    html += '<h3 class="lvhead' + g.cls + '">' + g.head + ' <span>' + group.length + ' word' + (group.length === 1 ? "" : "s") + '</span></h3>';
     group.forEach(function(c){
       var s = state(c.id), st = stageOf(s), cls = STAGE_CLASS[st] || "s0";
       var label = STAGE_LABEL[st];
@@ -1420,7 +1469,7 @@ function renderHome(){
     var learned = CARDS.filter(function(c){ return c.lv === lv && isKnown(state(c.id)); }).length;
     learnedAll += learned;
     var locked = isLocked(lv);
-    html += '<div class="lvl' + (locked ? " locked" : "") + '"><b>' + LV[lv] + '</b><span class="track"><i style="width:' + Math.round(learned / total * 100) + '%"></i></span>' +
+    html += '<div class="lvl lv' + lv + (locked ? " locked" : "") + '"><b>' + LV[lv] + '</b><span class="track"><i style="width:' + Math.round(learned / total * 100) + '%"></i></span>' +
       '<span class="n">' + (locked ? (learned ? learned + " · " : "") + "Members" : learned + " / " + total) + '</span></div>';
   }
   $("#levelBars").innerHTML = html;
@@ -1450,6 +1499,7 @@ function setDeck(d){
   if (prefs.deck === d) return;
   prefs.deck = d; prefs.source = "all"; fc.cur = null; fc.revealed = false; fc.undo = null; savePrefs();
   newSel.value = String(deckNewPerDay());
+  if (CARDS.length) renderStairs();   // levels for General Vocabulary, categories for Islamic terms
 }
 document.addEventListener("click", function(e){
   var a = e.target.closest("#home a[href^='#study']");
