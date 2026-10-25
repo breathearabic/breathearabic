@@ -322,12 +322,24 @@ main.addEventListener("click", function(e){
 });
 
 /* ---------- comprehension questions ---------- */
-var quiz = null;   // {lesson, i, picked, score}
+var quiz = null;   // {lesson, i, picked, score, order}
+// Answers are shown in a random order (fixed for each attempt), so the right one isn't always in the same place.
+// True/false keeps its natural order.
+function answerOrder(q){
+  var n = (q.options || []).length, idx = [];
+  for (var i = 0; i < n; i++) idx.push(i);
+  if (n === 2 && /^صَحِيحٌ$/.test(q.options[0].ar) && /^خَطَأٌ$/.test(q.options[1].ar)) return idx;
+  for (var j = n - 1; j > 0; j--) { var r = Math.floor(Math.random() * (j + 1)), t = idx[j]; idx[j] = idx[r]; idx[r] = t; }
+  return idx;
+}
 function renderQuestion(){
   var l = quiz.lesson, qs = l.questions || [], q = qs[quiz.i], answered = quiz.picked != null;
+  quiz.order = quiz.order || {};
+  var order = quiz.order[quiz.i] || (quiz.order[quiz.i] = answerOrder(q));
   var html = head(l, 2) + '<p class="q-num">Question ' + (quiz.i + 1) + ' of ' + qs.length + '</p>' +
     '<p class="q-ar" lang="ar">' + esc(q.ar) + '</p>' + (q.en ? '<p class="q-en">' + esc(q.en) + '</p>' : "") +
-    '<div class="opts">' + (q.options || []).map(function(o, k){
+    '<div class="opts">' + order.map(function(k){
+      var o = q.options[k];
       var c = answered ? (k === q.right ? " right" : k === quiz.picked ? " wrong" : "") : "";
       return '<button class="opt' + c + '" type="button" data-pick="' + k + '"' + (answered ? " disabled" : "") + '><span class="en">' + esc(o.en || "") + '</span><span class="ar" lang="ar">' + esc(o.ar) + '</span></button>';
     }).join("") + '</div>';
