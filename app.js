@@ -339,7 +339,9 @@ function queueInfo(now){
   });
   var byDue = function(a, b){ return state(a.id).due - state(b.id).due; };
   learnDue.sort(byDue); learnLater.sort(byDue); revDue.sort(byDue);
-  fresh.sort(function(a, b){ return a.so - b.so; });
+  // New words come level by level (all A1 first, then A2, ...), in deck order within a level.
+  // Words already studied are untouched: they follow their own memory schedule.
+  fresh.sort(function(a, b){ return (a.lv - b.lv) || (a.so - b.so); });
   var newLeft = Math.max(0, newLimitToday(now) - newStartedToday(now));
   return {pool:p, learnDue:learnDue, learnLater:learnLater, revDue:revDue, fresh:fresh, newShown:Math.min(newLeft, fresh.length), newLeft:newLeft, learned:learned, learning:learning, held:held};
 }
