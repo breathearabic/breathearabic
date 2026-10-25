@@ -63,7 +63,7 @@ section.box > p{margin:0 0 12px;color:var(--muted);font-size:.93rem}
 .btn:disabled{opacity:.5;cursor:default}
 .link{background:none;border:0;padding:2px 0;color:var(--lapis);font-weight:500;text-decoration:underline;text-underline-offset:3px}
 .danger{color:var(--wrong)}
-input[type=text],input[type=email],input[type=url],input[type=search],select,textarea{border:1px solid var(--line);background:var(--paper);border-radius:9px;padding:7px 9px;font-size:.93rem;width:100%}
+input[type=text],input[type=email],input[type=url],input[type=search],input[type=number],select,textarea{border:1px solid var(--line);background:var(--paper);border-radius:9px;padding:7px 9px;font-size:.93rem;width:100%}
 .form{display:grid;grid-template-columns:2fr 1fr 2fr auto;gap:8px;align-items:end}
 .form label{display:grid;gap:4px;font-size:.85rem;color:var(--muted)}
 .notify{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:.9rem;color:var(--muted)}
@@ -106,6 +106,20 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
 .bars span{flex:1;background:var(--lapis);border-radius:3px 3px 0 0;min-height:2px;opacity:.85}
 .bars span.zero{background:var(--step)}
 .muted{color:var(--muted)}
+.lform{display:grid;gap:14px;margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
+.lform h3{margin:6px 0 0;font-size:.95rem;font-weight:600}
+.lform label{display:grid;gap:3px;font-size:.8rem;color:var(--muted)}
+.lgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;align-items:end}
+.lgrid .checks{display:flex;gap:14px;align-items:center;font-size:.88rem;color:var(--ink)}
+.lgrid .checks label{display:flex;gap:6px;align-items:center;color:var(--ink);font-size:.88rem}
+.lrow{display:grid;grid-template-columns:2fr 2fr auto;gap:8px;align-items:start}
+.lrow.kw{grid-template-columns:2fr 2fr 1fr 1fr auto}
+.lrow.opt{grid-template-columns:auto 2fr 2fr auto;align-items:center}
+.lform .ar-in{font-family:var(--ar);direction:rtl;font-size:1.15rem}
+.lform textarea.ar-in{min-height:46px;line-height:1.7}
+.qblock{border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:8px;background:var(--paper)}
+.qblock-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+@media (max-width:640px){ .lrow,.lrow.kw{grid-template-columns:1fr} .lrow.opt{grid-template-columns:auto 1fr auto} .lrow.opt input.en-in{grid-column:2 / 3} }
 .tag.gone{background:var(--learning-soft);color:var(--learning)}
 </style>
 </head>
@@ -192,6 +206,18 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
       <div id="deckReview"></div>
     </section>
 
+    <section class="box" aria-labelledby="lessonsTitle">
+      <h2 id="lessonsTitle">Lessons</h2>
+      <p>Short lessons for the Learn tab: a few sentences of story (each with its English), the key words, and comprehension questions. Learners see a lesson once it's published. A1 and A2 lessons are free; B1 and up are for members unless you tick Free.</p>
+      <div class="row-actions"><button class="btn primary" id="newLesson" type="button">New lesson</button></div>
+      <p class="msg" id="lessonMsg" aria-live="polite"></p>
+      <div class="tablewrap" id="lessonListWrap"><table>
+        <thead><tr><th>Level</th><th>Unit</th><th>No.</th><th>Title</th><th>Words</th><th>Questions</th><th>Status</th><th></th></tr></thead>
+        <tbody id="lessonList"></tbody>
+      </table></div>
+      <div id="lessonForm" class="lform" hidden></div>
+    </section>
+
     <section class="box" aria-labelledby="libTitle">
       <h2 id="libTitle">Reading library</h2>
       <p>Texts for the Read page. Tick "Free" for texts free accounts can read; the rest are for members. Learners tap any word for its meaning and can save it to their reviews.</p>
@@ -275,15 +301,15 @@ sb.auth.getSession().then(function(r){
     if (role !== "admin" && role !== "editor") { $("#gate").innerHTML = "<p>This page is only for the admin.</p>"; return; }
     $("#gate").hidden = true; $("#admin").hidden = false;
     if (role === "editor") {
-      // Editors check words from the sheet and nothing else.
-      document.querySelectorAll("#admin > section").forEach(function(s){ s.hidden = s.getAttribute("aria-labelledby") !== "deckTitle"; });
-      $(".top h1").textContent = "Breathe Arabic: check words";
-      document.title = "Breathe Arabic: check words";
+      // Editors check words from the sheet and write lessons, nothing else.
+      document.querySelectorAll("#admin > section").forEach(function(s){ var t = s.getAttribute("aria-labelledby"); s.hidden = t !== "deckTitle" && t !== "lessonsTitle"; });
+      $(".top h1").textContent = "Breathe Arabic: words and lessons";
+      document.title = "Breathe Arabic: words and lessons";
       $("#deckTitle").textContent = "New words from the sheet";
-      initDeck();
+      initDeck(); loadLessons();
       return;
     }
-    loadMembers(); loadEngagement(); initDeck(); initBackup(); loadLibrary();
+    loadMembers(); loadEngagement(); initDeck(); loadLessons(); initBackup(); loadLibrary();
   });
 }).catch(function(e){ $("#gate").innerHTML = "<p>Couldn't load: " + esc(e.message) + "</p>"; });
 
@@ -636,6 +662,175 @@ function publish(){
     $("#deckReview").innerHTML = '<p class="msg ok">Published: ' + esc(parts.join(", ") || "nothing changed") + '. Members see the changes next time they open the app.</p>';
   }).catch(function(err){ setMsg(msg, "Publishing failed: " + err.message + ". Nothing you typed is lost; try again.", "bad"); btn.disabled = false; });
 }
+
+/* ---------- lessons (the Learn tab; table "lessons", 015_lessons.sql) ---------- */
+var LVL = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
+var TYPES = [["n", "noun"], ["v", "verb"], ["a", "adjective"], ["d", "adverb"], ["p", "phrase"], ["r", "particle"]];
+var lessonRows = [], ed = null;   // every lesson; the one being edited
+function loadLessons(){
+  check(sb.from("lessons").select("*").order("level").order("unit").order("position")).then(function(r){
+    lessonRows = r.data || []; renderLessonList();
+  }).catch(function(e){ setMsg($("#lessonMsg"), "Couldn't load lessons: " + e.message + " (run 015_lessons.sql in Supabase)", "bad"); });
+}
+function renderLessonList(){
+  $("#lessonList").innerHTML = lessonRows.map(function(l){
+    return '<tr><td>' + LVL[l.level] + '</td><td>' + l.unit + (l.unit_title ? ' · ' + esc(l.unit_title) : "") + '</td><td>' + l.position + '</td>' +
+      '<td>' + esc(l.title_en) + ' <span class="ar" style="font-size:1.05rem">' + esc(l.title_ar) + '</span></td>' +
+      '<td>' + (l.key_words || []).length + '</td><td>' + (l.questions || []).length + '</td>' +
+      '<td><span class="tag ' + (l.published ? "active" : "") + '">' + (l.published ? "published" : "draft") + '</span>' + (l.is_free ? ' <span class="tag comp">free</span>' : "") + '</td>' +
+      '<td><button class="btn small" type="button" data-edit-lesson="' + l.id + '">Edit</button></td></tr>';
+  }).join("") || '<tr><td colspan="8">No lessons yet. Press New lesson to write the first one.</td></tr>';
+}
+function blankLesson(){
+  var last = lessonRows[lessonRows.length - 1];
+  return {level:last ? last.level : 1, unit:last ? last.unit : 1, unit_title:last ? last.unit_title : "", position:last ? last.position + 1 : 1,
+    title_ar:"", title_en:"", lines:[{ar:"", en:""}], key_words:[{ar:"", en:"", type:"n", level:last ? last.level : 1}],
+    questions:[{ar:"", en:"", options:[{ar:"", en:""}, {ar:"", en:""}, {ar:"", en:""}], right:0, why:"", line:""}], is_free:true, published:false};
+}
+function openLesson(l){
+  ed = JSON.parse(JSON.stringify(l));
+  $("#lessonListWrap").hidden = true; $("#newLesson").hidden = true; $("#lessonForm").hidden = false;
+  setMsg($("#lessonMsg"), "");
+  renderLessonForm();
+  $("#lessonForm").scrollIntoView({block:"start"});
+}
+function closeLesson(){ ed = null; $("#lessonForm").hidden = true; $("#lessonListWrap").hidden = false; $("#newLesson").hidden = false; }
+function field(path, value, opts){
+  opts = opts || {};
+  var attrs = ' data-f="' + path + '"' + (opts.ar ? ' class="ar-in" dir="rtl" lang="ar"' : ' class="en-in"') + (opts.ph ? ' placeholder="' + esc(opts.ph) + '"' : "") + (opts.label ? ' aria-label="' + esc(opts.label) + '"' : "");
+  if (opts.area) return '<textarea' + attrs + '>' + esc(value || "") + '</textarea>';
+  return '<input type="' + (opts.num ? "number" : "text") + '"' + (opts.num ? ' min="1"' : "") + attrs + ' value="' + esc(value == null ? "" : value) + '">';
+}
+function select(path, value, options, label){
+  return '<select data-f="' + path + '" aria-label="' + esc(label) + '">' + options.map(function(o){ return '<option value="' + o[0] + '"' + (String(o[0]) === String(value) ? " selected" : "") + '>' + o[1] + '</option>'; }).join("") + '</select>';
+}
+function renderLessonForm(){
+  var l = ed, lvOpts = [1,2,3,4,5,6].map(function(n){ return [n, LVL[n]]; });
+  var html = '<h3>' + (l.id ? "Edit lesson" : "New lesson") + '</h3>' +
+    '<div class="lgrid"><label>Level' + select("level", l.level, lvOpts, "Level") + '</label>' +
+    '<label>Unit number' + field("unit", l.unit, {num:true}) + '</label>' +
+    '<label style="grid-column:span 2">Unit name' + field("unit_title", l.unit_title, {ph:"e.g. Everyday life"}) + '</label>' +
+    '<label>Lesson number' + field("position", l.position, {num:true}) + '</label>' +
+    '<div class="checks"><label><input type="checkbox" data-f="is_free"' + (l.is_free ? " checked" : "") + '> Free</label><label><input type="checkbox" data-f="published"' + (l.published ? " checked" : "") + '> Published</label></div></div>' +
+    '<div class="lgrid"><label>Title in Arabic' + field("title_ar", l.title_ar, {ar:true, ph:"فِي الْمَسْجِدِ"}) + '</label><label>Title in English' + field("title_en", l.title_en, {ph:"At the mosque"}) + '</label></div>' +
+    '<h3>Story, one sentence per row</h3>' +
+    l.lines.map(function(x, i){
+      return '<div class="lrow">' + field("lines." + i + ".ar", x.ar, {ar:true, area:true, label:"Sentence " + (i + 1) + " in Arabic", ph:"Arabic, with full vowels"}) +
+        field("lines." + i + ".en", x.en, {label:"Sentence " + (i + 1) + " in English", ph:"English"}) +
+        '<button class="btn small" type="button" data-op="del" data-list="lines" data-i="' + i + '" aria-label="Remove sentence ' + (i + 1) + '">Remove</button></div>';
+    }).join("") +
+    '<div><button class="btn small" type="button" data-op="add-line">Add sentence</button></div>' +
+    '<h3>Key words</h3>' +
+    l.key_words.map(function(k, i){
+      return '<div class="lrow kw">' + field("key_words." + i + ".ar", k.ar, {ar:true, label:"Key word " + (i + 1) + " in Arabic", ph:"Arabic, as in the story"}) +
+        field("key_words." + i + ".en", k.en, {label:"Key word " + (i + 1) + " meaning", ph:"Meaning, e.g. he enters"}) +
+        select("key_words." + i + ".type", k.type, TYPES, "Word type") + select("key_words." + i + ".level", k.level, lvOpts, "Word level") +
+        '<button class="btn small" type="button" data-op="del" data-list="key_words" data-i="' + i + '" aria-label="Remove key word ' + (i + 1) + '">Remove</button></div>';
+    }).join("") +
+    '<div><button class="btn small" type="button" data-op="add-kw">Add key word</button></div>' +
+    '<h3>Questions</h3>' +
+    l.questions.map(function(q, i){
+      var lineOpts = [["", "None"]].concat(l.lines.filter(function(x){ return x.ar.trim(); }).map(function(x){ var t = x.ar.trim().replace(/[.؟!]+$/, ""); return [t, t]; }));
+      return '<div class="qblock"><div class="qblock-head"><b>Question ' + (i + 1) + '</b><button class="btn small" type="button" data-op="del" data-list="questions" data-i="' + i + '">Remove question</button></div>' +
+        '<div class="lgrid"><label>Question in Arabic' + field("questions." + i + ".ar", q.ar, {ar:true, ph:"مَتَى …؟"}) + '</label><label>Question in English' + field("questions." + i + ".en", q.en, {ph:"When …?"}) + '</label></div>' +
+        '<span class="muted" style="font-size:.8rem">Answers: tick the right one</span>' +
+        q.options.map(function(o, k){
+          return '<div class="lrow opt"><input type="radio" name="right' + i + '" data-right="' + i + '" value="' + k + '"' + (q.right === k ? " checked" : "") + ' aria-label="Answer ' + (k + 1) + ' is right">' +
+            field("questions." + i + ".options." + k + ".ar", o.ar, {ar:true, label:"Answer " + (k + 1) + " in Arabic", ph:"Arabic"}) +
+            field("questions." + i + ".options." + k + ".en", o.en, {label:"Answer " + (k + 1) + " in English", ph:"English"}) +
+            '<button class="btn small" type="button" data-op="del-opt" data-q="' + i + '" data-i="' + k + '" aria-label="Remove answer ' + (k + 1) + '">Remove</button></div>';
+        }).join("") +
+        '<div><button class="btn small" type="button" data-op="add-opt" data-q="' + i + '">Add answer</button></div>' +
+        '<div class="lgrid"><label>Explanation after answering (English)' + field("questions." + i + ".why", q.why, {ph:"He goes on Friday."}) + '</label>' +
+        '<label>Sentence to show from the story' + select("questions." + i + ".line", q.line || "", lineOpts, "Sentence to show") + '</label></div></div>';
+    }).join("") +
+    '<div class="row-actions" style="margin-top:0"><button class="btn small" type="button" data-op="add-q">Add question</button><button class="btn small" type="button" data-op="add-tf">Add true or false question</button></div>' +
+    '<div class="row-actions"><button class="btn primary" type="button" data-op="save">Save lesson</button><button class="btn" type="button" data-op="cancel">Cancel</button>' +
+    (l.id ? '<button class="btn danger" type="button" data-op="delete" style="margin-left:auto">Delete lesson</button>' : "") + '</div>';
+  $("#lessonForm").innerHTML = html;
+}
+function setPath(obj, path, value){
+  var parts = path.split("."), o = obj;
+  for (var i = 0; i < parts.length - 1; i++) o = o[parts[i]];
+  o[parts[parts.length - 1]] = value;
+}
+$("#lessonForm").addEventListener("input", function(e){
+  var f = e.target.closest("[data-f]");
+  if (f && ed) {
+    var v = f.type === "checkbox" ? f.checked : f.type === "number" || /^(level|key_words\.\d+\.level)$/.test(f.dataset.f) ? +f.value : f.value;
+    setPath(ed, f.dataset.f, v);
+    if (f.dataset.f === "level" && !ed.id) { ed.is_free = v <= 2; renderLessonForm(); }   // A1/A2 free by default
+  }
+  var r = e.target.closest("[data-right]");
+  if (r && ed) ed.questions[+r.dataset.right].right = +r.value;
+});
+$("#lessonForm").addEventListener("change", function(e){
+  var f = e.target.closest("[data-f]");
+  if (f && /^lines\.\d+\.ar$/.test(f.dataset.f)) renderLessonForm();   // refresh the "sentence to show" lists
+});
+$("#lessonForm").addEventListener("click", function(e){
+  var b = e.target.closest("[data-op]"); if (!b || !ed) return;
+  var op = b.dataset.op, i = +b.dataset.i;
+  if (op === "add-line") ed.lines.push({ar:"", en:""});
+  else if (op === "add-kw") ed.key_words.push({ar:"", en:"", type:"n", level:ed.level});
+  else if (op === "add-q") ed.questions.push({ar:"", en:"", options:[{ar:"", en:""}, {ar:"", en:""}, {ar:"", en:""}], right:0, why:"", line:""});
+  else if (op === "add-tf") ed.questions.push({ar:"صَحِيحٌ أَمْ خَطَأٌ: ", en:"True or false: ", options:[{ar:"صَحِيحٌ", en:"true"}, {ar:"خَطَأٌ", en:"false"}], right:0, why:"", line:""});
+  else if (op === "add-opt") ed.questions[+b.dataset.q].options.push({ar:"", en:""});
+  else if (op === "del") ed[b.dataset.list].splice(i, 1);
+  else if (op === "del-opt") {
+    var q = ed.questions[+b.dataset.q]; q.options.splice(i, 1);
+    if (q.right >= q.options.length) q.right = 0; else if (q.right > i) q.right--;
+  }
+  else if (op === "cancel") { if (confirm("Close without saving your changes?")) closeLesson(); return; }
+  else if (op === "save") { saveLesson(); return; }
+  else if (op === "delete") { deleteLesson(); return; }
+  renderLessonForm();
+});
+function cleanLesson(l){
+  var trim = function(s){ return String(s || "").trim(); };
+  return {
+    level:+l.level, unit:Math.max(1, +l.unit || 1), unit_title:trim(l.unit_title), position:Math.max(1, +l.position || 1),
+    title_ar:trim(l.title_ar), title_en:trim(l.title_en), is_free:!!l.is_free, published:!!l.published,
+    lines:l.lines.map(function(x){ return {ar:trim(x.ar), en:trim(x.en)}; }).filter(function(x){ return x.ar; }),
+    key_words:l.key_words.map(function(k){ return {ar:trim(k.ar), en:trim(k.en), type:k.type || "n", level:+k.level || +l.level}; }).filter(function(k){ return k.ar && k.en; }),
+    questions:l.questions.map(function(q){
+      var opts = q.options.map(function(o){ return {ar:trim(o.ar), en:trim(o.en)}; });
+      var right = opts[q.right] && opts[q.right].ar ? q.right : -1;
+      var kept = opts.filter(function(o){ return o.ar; });
+      return {ar:trim(q.ar), en:trim(q.en), options:kept, right:right < 0 ? -1 : kept.indexOf(opts[right]), why:trim(q.why), line:trim(q.line)};
+    }).filter(function(q){ return q.ar; })
+  };
+}
+function saveLesson(){
+  var c = cleanLesson(ed), msg = $("#lessonMsg");
+  var problems = [];
+  if (!c.title_ar || !c.title_en) problems.push("give the lesson a title in Arabic and English");
+  if (!c.lines.length) problems.push("write at least one sentence of story");
+  if (c.lines.some(function(x){ return !x.en; })) problems.push("give every sentence its English");
+  c.questions.forEach(function(q, i){
+    if (q.options.length < 2) problems.push("question " + (i + 1) + " needs at least two answers");
+    else if (q.right < 0) problems.push("tick the right answer for question " + (i + 1));
+  });
+  if (problems.length) return setMsg(msg, "Before saving: " + problems.join("; ") + ".", "bad");
+  c.updated_at = new Date().toISOString(); c.updated_by = me.id;
+  setMsg(msg, "Saving…");
+  var q = ed.id ? sb.from("lessons").update(c).eq("id", ed.id) : sb.from("lessons").insert(c);
+  check(q).then(function(){
+    setMsg(msg, "Saved: " + c.title_en + (c.published ? ". Learners can see it now." : ". It's a draft until you tick Published."), "ok");
+    closeLesson(); loadLessons();
+  }).catch(function(err){ setMsg(msg, "Couldn't save: " + err.message, "bad"); });
+}
+function deleteLesson(){
+  if (!confirm("Delete this lesson for good? Learners' scores for it are deleted too.")) return;
+  check(sb.from("lessons").delete().eq("id", ed.id)).then(function(){
+    setMsg($("#lessonMsg"), "Lesson deleted.", "ok"); closeLesson(); loadLessons();
+  }).catch(function(err){ setMsg($("#lessonMsg"), "Couldn't delete: " + err.message, "bad"); });
+}
+$("#newLesson").addEventListener("click", function(){ openLesson(blankLesson()); });
+document.addEventListener("click", function(e){
+  var b = e.target.closest("[data-edit-lesson]");
+  if (b) { var l = lessonRows.filter(function(x){ return x.id === b.dataset.editLesson; })[0]; if (l) openLesson(l); }
+});
 
 /* ---------- reading library ---------- */
 var libTexts = [];

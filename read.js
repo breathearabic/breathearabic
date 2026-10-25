@@ -611,6 +611,7 @@ sb.auth.getSession().then(function(r){
   // Switched off: back to the flashcards. A saved non-admin role may be out of date, so that waits for the server.
   if (access === "off") { location.replace("./"); return; }
   var shown = readerAllowed();
+  if (window.BA_TABS) BA_TABS.show({reader:true});
   if (!shown) main.innerHTML = '<div class="panel"><p>Loading…</p></div>';
   var idx = lsGet(ukey("read-index"));
   if (idx) { library = idx.library || []; readable = new Set(idx.readable || []); mine = idx.mine || []; }

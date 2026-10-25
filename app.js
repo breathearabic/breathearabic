@@ -1155,6 +1155,7 @@ var signin = {email:"", sent:false, busy:false, msg:"", bad:false};
 function showSignedOut(){
   user = null; profile = null; member = null; CARDS = []; byId = new Map(); prog.p = {}; importState = null; remind = null; renderRemind();
   $("#appMain").hidden = true; $("#landing").hidden = false; $("#topSub").hidden = true; $("#topnav").hidden = true;
+  if (window.BA_TABS) BA_TABS.hide();
   // The landing page only mentions the Read page once it's open to everyone.
   var reader = CFG.readerAccess === "everyone";
   document.querySelectorAll("#landing [data-reader]").forEach(function(el){ el.hidden = !reader; });
@@ -1233,6 +1234,7 @@ function startFor(u){
   remind = null; renderRemind();
   signin = {email:"", sent:false, busy:false, msg:"", bad:false};
   $("#landing").hidden = true; $("#appMain").hidden = false;
+  if (window.BA_TABS) BA_TABS.show({reader:readerAllowed()});
   activity = {};
   serverProgressCount = -1; loadedOnline = false;
   outbox = {up:{}, del:{}, logs:[], wipe:false};
@@ -1309,6 +1311,26 @@ function deckToday(d, now){
   return {work: work};
 }
 var homeDeckPicked = false;
+/* The next lesson from the Learn tab: the first published lesson the learner can open and hasn't finished.
+   Shown from the saved copy straight away, then refreshed from the server once per visit. */
+var lessonsFetched = false;
+function renderLessonCard(){
+  var box = $("#homeLesson"); if (!box || !user) return;
+  var list = lsGet(ukey("lesson-index")) || [], done = lsGet(ukey("lesson-done")) || {};
+  var next = list.filter(function(l){ return !done[l.id] && (l.is_free || hasAccess()); })[0];
+  box.innerHTML = !next ? "" :
+    '<a class="lesson-card" href="learn.html#l=' + esc(next.id) + '"><span class="lc-top"><span class="lc-tag">Next lesson · ' + LV[next.level] + ' · Unit ' + next.unit + '</span>' +
+    '<span>' + next.questions + ' question' + (next.questions === 1 ? "" : "s") + '</span></span>' +
+    '<span class="lc-ar" lang="ar">' + esc(next.title_ar) + '</span><b>' + esc(next.title_en) + '</b>' +
+    '<span class="btn primary">Start lesson</span></a>';
+  if (lessonsFetched) return;
+  lessonsFetched = true;
+  Promise.all([check(sb.rpc("lesson_index")), check(sb.from("lesson_progress").select("lesson_id,score,total"))]).then(function(r){
+    var d = {}; (r[1].data || []).forEach(function(p){ d[p.lesson_id] = {score:p.score, total:p.total}; });
+    lsSet(ukey("lesson-index"), r[0].data || []); lsSet(ukey("lesson-done"), d);
+    if (view === "home") renderLessonCard();
+  }).catch(function(){ lessonsFetched = false; });   // lessons not set up yet, or offline
+}
 document.addEventListener("click", function(e){
   var b = e.target.closest("[data-home-deck]");
   if (b) { setDeck(b.dataset.homeDeck); renderHome(); }
@@ -1323,6 +1345,7 @@ function renderHome(){
     ? '<div class="import-banner"><span>Used the earlier version of this app? Bring your progress with you.</span><a class="btn primary" href="#study/cards">Bring it over</a></div>'
     : "";
 
+  renderLessonCard();
   if (!CARDS.length) return;
   if (!DECKS[prefs.deck]) prefs.deck = "main";
   // Today shows one deck at a time, with a switch that says how much is left in each. On the first look this
@@ -1379,12 +1402,13 @@ function renderHome(){
 
   // Tiles: Read (with "continue reading") and Admin.
   var reader = readerAllowed(), last = lsGet(ukey("last-text"));
+  if (window.BA_TABS) BA_TABS.show({reader:reader});
   $("#tileRead").hidden = !reader;
   if (reader && last && last.id) { $("#tileRead").setAttribute("href", "read#t=" + encodeURIComponent(last.id)); $("#tileReadSub").textContent = "Continue: " + last.title; }
   else { $("#tileRead").setAttribute("href", "read"); $("#tileReadSub").textContent = "Tap any word for its meaning"; }
   var role = profile && profile.role;
   $("#tileAdmin").hidden = role !== "admin" && role !== "editor";
-  if (role === "editor") $("#tileAdmin").querySelector("span:last-child").innerHTML = "<b>Check words</b><small>New words from the sheet: meanings and levels</small>";
+  if (role === "editor") $("#tileAdmin").querySelector("span:last-child").innerHTML = "<b>Words and lessons</b><small>Check new words from the sheet and write lessons</small>";
 
   // Progress by level.
   var learnedAll = 0, html = "";

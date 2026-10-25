@@ -383,6 +383,13 @@ footer p{margin:0;max-width:62ch}
 .stat span{font-size:.82rem;color:var(--muted)}
 .stat.due b{color:var(--known)} .stat.new b{color:var(--lapis)} .stat.lrn b{color:var(--learning)}
 .today-cta{display:flex;gap:10px;flex-wrap:wrap}
+.lesson-card{display:grid;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin-bottom:14px;color:var(--ink);text-decoration:none}
+.lesson-card .lc-top{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:.8rem;color:var(--muted)}
+.lesson-card .lc-tag{font-weight:600;color:var(--lapis);background:var(--lapis-soft);padding:2px 10px;border-radius:999px}
+.lesson-card .lc-ar{font-family:var(--ar);direction:rtl;text-align:right;font-size:1.8rem;line-height:1.4;font-weight:700}
+.lesson-card b{font-size:1.05rem;font-weight:600}
+.lesson-card .btn{text-align:center;margin-top:6px;color:var(--lapis-ink)}
+.today .today-cta .note{flex-basis:100%;margin:0 0 4px}
 .today-cta .btn{text-decoration:none;flex:1;min-width:160px;text-align:center;padding:13px 16px}
 .today-cta .btn.primary{color:var(--lapis-ink)} .today-cta .btn:not(.primary){color:var(--ink)}
 .today .note{margin:0 0 14px;color:var(--muted)}
@@ -391,7 +398,10 @@ footer p{margin:0;max-width:62ch}
 .bars i{display:block;flex:1;border-radius:3px 3px 1px 1px;background:var(--known);min-height:3px}
 .bars i.zero{background:var(--step)}
 .bars i.now{background:var(--lapis)} .bars i.now.zero{background:color-mix(in srgb,var(--lapis) 35%,transparent)}
-.deck-tag{font-size:.8rem;font-weight:600;color:var(--lapis);background:var(--lapis-soft);border-radius:999px;padding:2px 10px;margin-left:6px;vertical-align:middle}
+.deck-switch{display:flex;gap:4px;margin:12px 0 0;padding:4px;border-radius:12px;background:var(--paper)}
+.deck-switch button{flex:1;border:0;background:transparent;padding:8px 10px;border-radius:9px;font:inherit;font-size:.88rem;font-weight:500;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;text-align:center}
+.deck-switch button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 0 var(--line)}
+.deck-left{font-size:.75rem;font-weight:600;min-width:20px;padding:1px 7px;border-radius:999px;background:var(--lapis-soft);color:var(--lapis);font-variant-numeric:tabular-nums}
 .deck-line{margin:0 0 10px;font-size:.9rem;color:var(--muted)}
 .study-options{margin-top:28px;padding-top:18px;border-top:1px solid var(--line)}
 .study-options h2{font-size:1rem;margin:0 0 12px}
@@ -519,8 +529,10 @@ footer p{margin:0;max-width:62ch}
   <div id="home" hidden>
     <p class="greet"><span lang="ar" dir="rtl" class="ar-greet">السلام عليكم</span> <span id="greetDate"></span></p>
     <div id="homeImport"></div>
+    <div id="homeLesson"></div>
     <section class="today" aria-labelledby="todayTitle">
-      <div class="today-head"><h2 id="todayTitle">Today <small class="deck-tag" id="todayDeck"></small></h2><span id="todayEta" class="muted"></span></div>
+      <div class="today-head"><h2 id="todayTitle">Today</h2><span id="todayEta" class="muted"></span></div>
+      <div class="deck-switch" id="todayDecks" role="tablist" aria-label="Deck"></div>
       <div class="today-stats" id="todayStats"></div>
       <div class="today-cta" id="todayCta"></div>
     </section>
@@ -532,7 +544,6 @@ footer p{margin:0;max-width:62ch}
     </section>
 
     <nav class="tiles" aria-label="Study">
-      <a class="tile" href="#study/cards"><span class="tile-ico" aria-hidden="true">▤</span><span><b>Study</b><small>Flashcards, quiz and word list for either deck</small></span></a>
       <a class="tile" href="read" id="tileRead" hidden><span class="tile-ico ar" aria-hidden="true">اقرأ</span><span><b>Read</b><small id="tileReadSub">Tap any word for its meaning</small></span></a>
       <a class="tile" href="admin" id="tileAdmin" hidden><span class="tile-ico" aria-hidden="true">⚙</span><span><b>Admin</b><small>Members, gifts, deck and library</small></span></a>
     </nav>
@@ -645,6 +656,7 @@ footer p{margin:0;max-width:62ch}
 <script src="vendor/supabase-js-2.117.2.js"></script>
 <script src="speech.js"></script>
 <script src="fsrs.js"></script>
+<script src="nav.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
