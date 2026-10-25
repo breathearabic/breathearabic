@@ -157,7 +157,7 @@ function renderList(){
     u.items.forEach(function(l){
       var d = done[l.id], locked = !canOpen(l), isNext = next && next.id === l.id;
       var cls = d ? "done" : locked ? "locked" : isNext ? "next" : "";
-      var meta = locked ? "For members: join from the home screen" : d ? d.score + " of " + d.total + " right" : l.words + " words · " + l.questions + " question" + (l.questions === 1 ? "" : "s") + (isNext ? " · next" : "");
+      var meta = locked ? "For members: join from the home screen" : d ? d.score + " of " + d.total + " right" : l.words + " key word" + (l.words === 1 ? "" : "s") + " · " + l.questions + " question" + (l.questions === 1 ? "" : "s") + (isNext ? " · next" : "");
       html += '<a class="lesson-row ' + cls + '" href="' + (locked ? "./" : "#l=" + l.id) + '">' +
         '<span class="dot" aria-hidden="true">' + (d ? "✓" : locked ? "–" : l.position) + '</span>' +
         '<span class="t"><b>' + esc(l.title_en) + '</b><small>' + esc(meta) + '</small></span>' +
@@ -193,8 +193,10 @@ function storyHtml(l){
       var hit = W.match(word);
       return esc(pre) + '<span class="w ' + W.cls(hit && hit.card) + '" data-w="' + esc(word) + '"' + (i > -1 ? ' data-kw="' + i + '"' : "") + ' tabindex="0" role="button">' + esc(word) + '</span>' + esc(post);
     }).join("");
-  }).join(" ");
+  }).join(isDialogue(l) ? "<br>" : " ");
 }
+// A dialogue: every sentence starts with the speaker's name and a colon ("خَلِيلٌ: …"). Each speaker then gets a new line.
+function isDialogue(l){ var ls = l.lines || []; return ls.length > 1 && ls.every(function(x){ return /^[^\s:]+:\s/.test(String(x.ar || "")); }); }
 // A word's meaning in this story: as written, or the same word with different vowels.
 function glossOf(l, w){
   var g = l.glosses || {};
@@ -212,7 +214,7 @@ function renderLesson(l){
     '<span class="grow">Listen to the story</span></div>' +
     '<div class="story"><span class="ar" lang="ar">' + storyHtml(l) + '</span>' +
     '<button class="link" type="button" data-act="toggle-en" aria-expanded="' + showEn + '" style="margin-top:10px">' + (showEn ? "Hide translation" : "Show translation") + '</button>' +
-    '<div class="en"' + (showEn ? "" : " hidden") + '>' + esc((l.lines || []).map(function(x){ return x.en; }).join(" ")) + '</div>' +
+    '<div class="en"' + (showEn ? "" : " hidden") + '>' + (l.lines || []).map(function(x){ return esc(x.en); }).join(isDialogue(l) ? "<br>" : " ") + '</div>' +
     '<div class="legend"><span><i style="border-color:var(--known)"></i>Known</span><span><i style="border-color:color-mix(in srgb,var(--known) 50%,transparent)"></i>Young</span><span><i style="border-color:var(--learning)"></i>Learning</span><span><i style="border-color:var(--lapis)"></i>Saved</span><span>Tap any word for its meaning.</span></div></div>';
   if (kws.length) {
     html += '<div class="sec-head"><h2>Key words</h2><button class="link" type="button" data-act="add-all">Add all to flashcards</button></div><div class="words">' +
