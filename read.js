@@ -80,6 +80,7 @@ function loadRemote(){
     readable = new Set(r[5].data.filter(function(t){ return !t.owner_id; }).map(function(t){ return t.id; }));
     mine = r[5].data.filter(function(t){ return t.owner_id === user.id; });
     lsSet(ukey("cards"), cards); lsSet(ukey("member"), member); lsSet(ukey("profile"), profile);
+    if (window.BA_TABS) BA_TABS.show({admin:!!profile && (profile.role === "admin" || profile.role === "editor")});
     lsSet(ukey("read-index"), {library:library, readable:Array.from(readable), mine:mine});
     indexCards();
     if (!hasAccess()) return sb.from("lookup_usage").select("lookups").eq("user_id", user.id).eq("day", new Date().toISOString().slice(0, 10)).maybeSingle()
@@ -529,7 +530,7 @@ sb.auth.getSession().then(function(r){
   // Switched off: back to the flashcards. A saved non-admin role may be out of date, so that waits for the server.
   if (access === "off") { location.replace("./"); return; }
   var shown = readerAllowed();
-  if (window.BA_TABS) BA_TABS.show({reader:true});
+  if (window.BA_TABS) BA_TABS.show({reader:true, admin:!!profile && (profile.role === "admin" || profile.role === "editor")});
   if (!shown) main.innerHTML = '<div class="panel"><p>Loading…</p></div>';
   var idx = lsGet(ukey("read-index"));
   if (idx) { library = idx.library || []; readable = new Set(idx.readable || []); mine = idx.mine || []; }

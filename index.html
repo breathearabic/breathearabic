@@ -434,13 +434,6 @@ footer p{margin:0;max-width:62ch}
 .deck-pick b{font-size:1.05rem}
 .deck-pick small{color:var(--muted);font-size:.85rem}
 .deck-pick.current{border-color:var(--lapis)}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:0 0 14px}
-.tile{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;text-decoration:none;color:var(--ink);transition:border-color .15s}
-.tile:hover{border-color:var(--lapis)}
-.tile b{display:block;font-weight:600}
-.tile small{display:block;color:var(--muted);font-size:.85rem}
-.tile-ico{flex:none;width:42px;height:42px;border-radius:12px;background:var(--lapis-soft);color:var(--lapis);display:grid;place-items:center;font-size:1.2rem;font-weight:700}
-.tile-ico.ar{font-family:var(--ar);font-size:1rem}
 .lvl{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;margin-top:10px;font-size:.9rem}
 .lvl b{font-weight:600}
 .lvl .track{height:8px;border-radius:99px;background:var(--step);overflow:hidden}
@@ -563,11 +556,6 @@ footer p{margin:0;max-width:62ch}
       <div class="bars" id="activityBars" role="img" aria-label="Reviews over the last 30 days"></div>
       <p class="muted small" id="streakHint"></p>
     </section>
-
-    <nav class="tiles" aria-label="Study">
-      <a class="tile" href="read" id="tileRead" hidden><span class="tile-ico ar" aria-hidden="true">اقرأ</span><span><b>Read</b><small id="tileReadSub">Tap any word for its meaning</small></span></a>
-      <a class="tile" href="admin" id="tileAdmin" hidden><span class="tile-ico" aria-hidden="true">⚙</span><span><b>Admin</b><small>Members, gifts, deck and library</small></span></a>
-    </nav>
 
     <section class="progress" aria-labelledby="progTitle">
       <div class="today-head"><h2 id="progTitle">Your progress</h2><span id="learnedTotal" class="muted"></span></div>

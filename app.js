@@ -1288,7 +1288,7 @@ function startFor(u){
   remind = null; renderRemind();
   signin = {email:"", sent:false, busy:false, msg:"", bad:false};
   $("#landing").hidden = true; $("#appMain").hidden = false;
-  if (window.BA_TABS) BA_TABS.show({reader:readerAllowed()});
+  if (window.BA_TABS) BA_TABS.show({reader:readerAllowed(), admin:!!profile && (profile.role === "admin" || profile.role === "editor")});
   activity = {};
   serverProgressCount = -1; loadedOnline = false;
   outbox = {up:{}, del:{}, logs:[], wipe:false};
@@ -1454,15 +1454,8 @@ function renderHome(){
     ? (work ? "Good start today. " + work + " more to go." : "Done for today. Come back tomorrow to keep your streak.")
     : streak ? "Study today to keep your streak going." : "Answer a card today to start a streak.";
 
-  // Tiles: Read (with "continue reading") and Admin.
-  var reader = readerAllowed(), last = lsGet(ukey("last-text"));
-  if (window.BA_TABS) BA_TABS.show({reader:reader});
-  $("#tileRead").hidden = !reader;
-  if (reader && last && last.id) { $("#tileRead").setAttribute("href", "read#t=" + encodeURIComponent(last.id)); $("#tileReadSub").textContent = "Continue: " + last.title; }
-  else { $("#tileRead").setAttribute("href", "read"); $("#tileReadSub").textContent = "Tap any word for its meaning"; }
-  var role = profile && profile.role;
-  $("#tileAdmin").hidden = role !== "admin" && role !== "editor";
-  if (role === "editor") $("#tileAdmin").querySelector("span:last-child").innerHTML = "<b>Words and lessons</b><small>Check new words from the sheet and write lessons</small>";
+  // Library and Admin live in the tab bar.
+  if (window.BA_TABS) BA_TABS.show({reader:readerAllowed(), admin:!!profile && (profile.role === "admin" || profile.role === "editor")});
 
   // Progress by level.
   var learnedAll = 0, html = "";

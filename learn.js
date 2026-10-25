@@ -416,11 +416,11 @@ sb.auth.getSession().then(function(r){
   if (!s && !(stored && !navigator.onLine)) { location.replace("./"); return; }
   user = s ? s.user : stored;
   loadCached();
-  if (window.BA_TABS) BA_TABS.show({reader:readerAllowed()});
+  if (window.BA_TABS) BA_TABS.show({reader:readerAllowed(), admin:!!profile && (profile.role === "admin" || profile.role === "editor")});
   if (index.length) route();
   loadWords();
   loadRemote().then(function(){
-    if (window.BA_TABS) BA_TABS.show({reader:readerAllowed()});
+    if (window.BA_TABS) BA_TABS.show({reader:readerAllowed(), admin:!!profile && (profile.role === "admin" || profile.role === "editor")});
     if (!/^#l=/.test(location.hash)) renderList(); else if (!cur && !quiz) route();
   }).catch(function(err){ console.warn(err); if (!index.length) main.innerHTML = '<div class="panel"><p>Couldn\'t load lessons. Check your connection and reload.</p></div>'; });
 });
