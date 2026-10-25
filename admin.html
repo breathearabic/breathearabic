@@ -849,6 +849,9 @@ function saveLesson(){
   if (!c.title_ar || !c.title_en) problems.push("give the lesson a title in Arabic and English");
   if (!c.lines.length) problems.push("write at least one sentence of story");
   if (c.lines.some(function(x){ return !x.en; })) problems.push("give every sentence its English");
+  // Learners can tap any word in the story, so a published lesson needs a meaning for every word.
+  var noMeaning = storyWords(c.lines).filter(function(w){ return !c.glosses[w]; });
+  if (c.published && noMeaning.length) problems.push("add a meaning for every word before publishing (" + noMeaning.length + " still empty: press Fill in meanings with AI, then check them), or untick Published to save it as a draft");
   c.questions.forEach(function(q, i){
     if (q.options.length < 2) problems.push("question " + (i + 1) + " needs at least two answers");
     else if (q.right < 0) problems.push("tick the right answer for question " + (i + 1));

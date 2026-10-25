@@ -117,7 +117,8 @@ function getLesson(id){
   var cached = lsGet(ukey("lesson:" + id));
   var fresh = check(sb.from("lessons").select("*").eq("id", id).maybeSingle()).then(function(r){
     if (r.data) {
-      var changed = !cached || cached.updated_at !== r.data.updated_at;
+      // Compare the whole lesson, not just updated_at: a change made straight in the database may not touch it.
+      var changed = !cached || JSON.stringify(cached) !== JSON.stringify(r.data);
       lessons[id] = r.data; lsSet(ukey("lesson:" + id), r.data);
       if (cached && changed && cur && cur.id === id && !quiz) renderLesson(r.data);
     }
@@ -267,11 +268,12 @@ function closeWpop(){ if (wpop) { wpop.remove(); wpop = null; } document.querySe
 function openWpop(el){
   closeWpop();
   var w = el.dataset.w, k = el.dataset.kw != null ? cur.key_words[+el.dataset.kw] : null;
-  var meaning = glossOf(cur, w) || (k ? k.en : ""), hit = W.match(w);
+  // The lesson's own meaning first; failing that, the key word's or the matching flashcard's meaning.
+  var hit = W.match(w), meaning = glossOf(cur, w) || (k ? k.en : "") || (hit ? hit.en || hit.card.en : "");
   var known = hit ? (hit.card.mine ? "In your saved words" : "In your words") + " · " + W.stage(hit.card) : "";
   el.classList.add("sel");
   wpop = document.createElement("div"); wpop.className = "wpop"; wpop.setAttribute("role", "dialog");
-  wpop.innerHTML = '<span class="ar" lang="ar">' + esc(w) + '</span><span style="display:grid"><b>' + esc(meaning || "No meaning added yet") + '</b>' +
+  wpop.innerHTML = '<span class="ar" lang="ar">' + esc(w) + '</span><span style="display:grid"><b>' + esc(meaning || "Meaning coming soon") + '</b>' +
     (k && bare(k.ar) !== bare(w) ? '<small style="color:var(--muted)">Key word: <span lang="ar" style="font-family:var(--ar);font-size:1.1rem">' + esc(k.ar) + '</span> ' + esc(k.en) + '</small>' : k ? '<small style="color:var(--muted)">Key word</small>' : "") +
     (known ? '<small style="color:var(--muted)">' + esc(known) + '</small>' : "") +
     '</span><button class="iconbtn" type="button" data-act="say-pop">Listen</button>';
