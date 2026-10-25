@@ -1,5 +1,5 @@
 /* Breathe Arabic service worker: keeps the app working offline. */
-const VERSION = "arvocab-v45";
+const VERSION = "arvocab-v47";
 const FONT_CACHE = "arvocab-fonts";
 const SHELL = [
   "./",
@@ -13,6 +13,7 @@ const SHELL = [
   "./learn.html",
   "./learn.js",
   "./nav.js",
+  "./wordmatch.js",
   "./fsrs.js",
   "./vendor/supabase-js-2.117.2.js",
   "./privacy.html",
@@ -48,7 +49,7 @@ self.addEventListener("fetch", (event) => {
   }
   if (url.origin === self.location.origin) {
     // App code and settings: use the network when it answers quickly, so updates arrive straight away.
-    if (/\/(app|config|fsrs|read|speech|learn|nav)\.js$|\/admin\.html$/.test(url.pathname)) { event.respondWith(networkFirstAsset(req)); return; }
+    if (/\/(app|config|fsrs|read|speech|learn|nav|wordmatch)\.js$|\/admin\.html$/.test(url.pathname)) { event.respondWith(networkFirstAsset(req)); return; }
     event.respondWith(cacheFirst(req));
     return;
   }

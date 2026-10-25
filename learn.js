@@ -19,6 +19,8 @@ if (!CFG.supabaseUrl || !CFG.supabaseKey || !window.supabase) { main.innerHTML =
 var sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, {auth:{persistSession:true, autoRefreshToken:true, detectSessionInUrl:true}});
 var user = null, member = null, profile = null;
 var index = [], done = {}, lessons = {};   // lesson list, lesson id -> {score,total}, lesson id -> full lesson
+var cards = [], prog = {};                 // the learner's words and how well they know them, for the underlines
+var W = window.makeWordMatcher(function(){ return cards; }, function(){ return prog; }, +CFG.knownDays || 21);
 function ukey(k){ return "arvocab-u:" + user.id + ":" + k; }
 
 /* ---------- membership (same rules as the flashcards) ---------- */
@@ -56,7 +58,21 @@ function kwIndexFor(token, kws){
 }
 
 /* ---------- loading ---------- */
+function toCard(r){ return {id:r.id, ar:r.arabic, en:r.english, lv:r.level, ty:r.word_type, so:r.sort_order, mine:/^u-/.test(r.id)}; }
+function fetchAll(table, cols, order){
+  var out = [];
+  function page(from){
+    return check(sb.from(table).select(cols).order(order, {ascending:true}).range(from, from + 999)).then(function(r){
+      out = out.concat(r.data || []);
+      return r.data && r.data.length === 1000 ? page(from + 1000) : out;
+    });
+  }
+  return page(0);
+}
 function loadCached(){
+  cards = (lsGet(ukey("cards")) || []).map(function(c){ c.mine = /^u-/.test(c.id); return c; });
+  prog = lsGet(ukey("prog")) || {};
+  W.index();
   index = lsGet(ukey("lesson-index")) || [];
   done = lsGet(ukey("lesson-done")) || {};
   member = lsGet(ukey("member")); profile = lsGet(ukey("profile"));
@@ -75,14 +91,41 @@ function loadRemote(){
     lsSet(ukey("lesson-index"), index); lsSet(ukey("lesson-done"), done);
   });
 }
+// The learner's words, for underlining by how well each is known (like the Read page). The word list is the one
+// the flashcards and Read page already keep on the device; it's only fetched here when there isn't one yet.
+function loadWords(){
+  return Promise.all([
+    cards.length ? null : fetchAll("cards", "id,level,word_type,arabic,english,sort_order,is_active", "sort_order"),
+    fetchAll("progress", "card_id,state", "card_id")
+  ]).then(function(r){
+    if (r[0]) { cards = r[0].filter(function(c){ return c.is_active !== false; }).map(toCard); lsSet(ukey("cards"), cards); }
+    var local = lsGet(ukey("prog")) || {};   // answers the flashcards haven't sent yet
+    prog = {}; r[1].forEach(function(x){ prog[x.card_id] = x.state; });
+    Object.keys(local).forEach(function(id){ prog[id] = local[id]; });
+    W.index(); refreshUnderlines();
+  }).catch(function(err){ console.warn(err); });
+}
+function refreshUnderlines(){
+  document.querySelectorAll(".story .w").forEach(function(el){
+    var hit = W.match(el.dataset.w);
+    el.className = "w " + W.cls(hit && hit.card) + (el.classList.contains("sel") ? " sel" : "");
+  });
+}
+// The saved copy shows straight away; the server's copy replaces it (and redraws the story) if an editor changed it.
 function getLesson(id){
   if (lessons[id]) return Promise.resolve(lessons[id]);
   var cached = lsGet(ukey("lesson:" + id));
   var fresh = check(sb.from("lessons").select("*").eq("id", id).maybeSingle()).then(function(r){
-    if (r.data) { lessons[id] = r.data; lsSet(ukey("lesson:" + id), r.data); }
+    if (r.data) {
+      var changed = !cached || cached.updated_at !== r.data.updated_at;
+      lessons[id] = r.data; lsSet(ukey("lesson:" + id), r.data);
+      if (cached && changed && cur && cur.id === id && !quiz) renderLesson(r.data);
+    }
     return r.data;
   });
-  return cached ? Promise.resolve(lessons[id] = cached) : fresh;
+  if (!cached) return fresh;
+  fresh.catch(function(){});   // offline: keep the saved copy
+  return Promise.resolve(lessons[id] = cached);
 }
 
 /* ---------- the lesson list ---------- */
@@ -137,17 +180,26 @@ function head(l, step){
     '<span class="steps" aria-label="Step ' + step + ' of 2"><i class="on"></i><i' + (step > 1 ? ' class="on"' : "") + '></i></span></div>' +
     '<div class="ltitle"><small>' + LV[l.level] + ' · Unit ' + l.unit + ' · Lesson ' + meta.position + '</small><h1>' + esc(l.title_ar) + '</h1><p>' + esc(l.title_en) + '</p></div>';
 }
+// Every word is tappable, and underlined by how well the learner knows it (same colours as the Read page).
 function storyHtml(l){
   var kws = l.key_words || [];
   return (l.lines || []).map(function(line){
     return String(line.ar || "").split(/(\s+)/).map(function(tok){
       if (!/\S/.test(tok)) return tok;
-      var word = tok.replace(/[.،؛:!؟?«»"()]+/g, ""), i = word ? kwIndexFor(word, kws) : -1;
-      if (i < 0) return esc(tok);
-      var pre = tok.slice(0, tok.indexOf(word)), post = tok.slice(tok.indexOf(word) + word.length);
-      return esc(pre) + '<span class="kw" data-kw="' + i + '" tabindex="0" role="button">' + esc(word) + '</span>' + esc(post);
+      var word = tok.replace(/[.,،؛:!؟?«»"()]+/g, "");
+      if (!word) return esc(tok);
+      var i = kwIndexFor(word, kws), pre = tok.slice(0, tok.indexOf(word)), post = tok.slice(tok.indexOf(word) + word.length);
+      var hit = W.match(word);
+      return esc(pre) + '<span class="w ' + W.cls(hit && hit.card) + '" data-w="' + esc(word) + '"' + (i > -1 ? ' data-kw="' + i + '"' : "") + ' tabindex="0" role="button">' + esc(word) + '</span>' + esc(post);
     }).join("");
   }).join(" ");
+}
+// A word's meaning in this story: as written, or the same word with different vowels.
+function glossOf(l, w){
+  var g = l.glosses || {};
+  if (g[w]) return g[w];
+  var b = bare(w), k = Object.keys(g).filter(function(x){ return bare(x) === b; })[0];
+  return k ? g[k] : "";
 }
 function storyText(l){ return (l.lines || []).map(function(x){ return x.ar; }).join(" "); }
 function renderLesson(l){
@@ -160,7 +212,7 @@ function renderLesson(l){
     '<div class="story"><span class="ar" lang="ar">' + storyHtml(l) + '</span>' +
     '<button class="link" type="button" data-act="toggle-en" aria-expanded="' + showEn + '" style="margin-top:10px">' + (showEn ? "Hide translation" : "Show translation") + '</button>' +
     '<div class="en"' + (showEn ? "" : " hidden") + '>' + esc((l.lines || []).map(function(x){ return x.en; }).join(" ")) + '</div>' +
-    (kws.length ? '<p class="hint">Tap an underlined word for its meaning.</p>' : "") + '</div>';
+    '<div class="legend"><span><i style="border-color:var(--known)"></i>Known</span><span><i style="border-color:color-mix(in srgb,var(--known) 50%,transparent)"></i>Young</span><span><i style="border-color:var(--learning)"></i>Learning</span><span><i style="border-color:var(--lapis)"></i>Saved</span><span>Tap any word for its meaning.</span></div></div>';
   if (kws.length) {
     html += '<div class="sec-head"><h2>Key words</h2><button class="link" type="button" data-act="add-all">Add all to flashcards</button></div><div class="words">' +
       kws.map(function(k, i){
@@ -198,6 +250,7 @@ function addWord(l, i){
   return sb.from("cards").insert(row).then(function(r){
     if (r.error && r.error.code !== "23505") throw r.error;   // 23505: already saved
     var added = lsGet(ukey("lesson-added")) || {}; added[bare(k.ar)] = 1; lsSet(ukey("lesson-added"), added);
+    if (!r.error) { cards.push(toCard(row)); lsSet(ukey("cards"), cards); W.index(); refreshUnderlines(); }
   });
 }
 function refreshWords(){
@@ -210,27 +263,37 @@ function refreshWords(){
 
 /* ---------- a word's meaning, when tapped in the story ---------- */
 var wpop = null;
-function closeWpop(){ if (wpop) { wpop.remove(); wpop = null; } document.querySelectorAll(".kw.sel").forEach(function(x){ x.classList.remove("sel"); }); }
+function closeWpop(){ if (wpop) { wpop.remove(); wpop = null; } document.querySelectorAll(".story .w.sel").forEach(function(x){ x.classList.remove("sel"); }); }
 function openWpop(el){
   closeWpop();
-  var k = cur.key_words[+el.dataset.kw]; if (!k) return;
+  var w = el.dataset.w, k = el.dataset.kw != null ? cur.key_words[+el.dataset.kw] : null;
+  var meaning = glossOf(cur, w) || (k ? k.en : ""), hit = W.match(w);
+  var known = hit ? (hit.card.mine ? "In your saved words" : "In your words") + " · " + W.stage(hit.card) : "";
   el.classList.add("sel");
   wpop = document.createElement("div"); wpop.className = "wpop"; wpop.setAttribute("role", "dialog");
-  wpop.innerHTML = '<span class="ar" lang="ar">' + esc(k.ar) + '</span><b>' + esc(k.en) + '</b><button class="iconbtn" type="button" data-act="say-pop">Listen</button>';
+  wpop.innerHTML = '<span class="ar" lang="ar">' + esc(w) + '</span><span style="display:grid"><b>' + esc(meaning || "No meaning added yet") + '</b>' +
+    (k && bare(k.ar) !== bare(w) ? '<small style="color:var(--muted)">Key word: <span lang="ar" style="font-family:var(--ar);font-size:1.1rem">' + esc(k.ar) + '</span> ' + esc(k.en) + '</small>' : k ? '<small style="color:var(--muted)">Key word</small>' : "") +
+    (known ? '<small style="color:var(--muted)">' + esc(known) + '</small>' : "") +
+    '</span><button class="iconbtn" type="button" data-act="say-pop">Listen</button>';
   document.body.appendChild(wpop);
   var r = el.getBoundingClientRect(), w = wpop.offsetWidth;
   wpop.style.top = (window.scrollY + r.bottom + 8) + "px";
   wpop.style.left = Math.max(10, Math.min(window.scrollX + r.left + r.width / 2 - w / 2, document.documentElement.clientWidth - w - 10)) + "px";
-  wpop.querySelector("button").addEventListener("click", function(){ say(k.ar); });
+  wpop.querySelector("button").addEventListener("click", function(){ say(w); });
 }
 function say(text){ if (speaker) speaker.speak(text); }
 document.addEventListener("click", function(e){
-  if (wpop && !e.target.closest(".wpop") && !e.target.closest(".kw")) closeWpop();
+  if (wpop && !e.target.closest(".wpop") && !e.target.closest(".story .w")) closeWpop();
+});
+main.addEventListener("keydown", function(e){
+  var w = e.target.closest && e.target.closest(".story .w");
+  if (w && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openWpop(w); }
+  if (e.key === "Escape") closeWpop();
 });
 
 main.addEventListener("click", function(e){
-  var kw = e.target.closest(".kw");
-  if (kw) { openWpop(kw); return; }
+  var tapped = e.target.closest(".story .w");
+  if (tapped) { openWpop(tapped); return; }
   var b = e.target.closest("[data-act]"); if (!b || !cur) return;
   var act = b.dataset.act;
   if (act === "play") {
@@ -336,6 +399,7 @@ sb.auth.getSession().then(function(r){
   loadCached();
   if (window.BA_TABS) BA_TABS.show({reader:readerAllowed()});
   if (index.length) route();
+  loadWords();
   loadRemote().then(function(){
     if (window.BA_TABS) BA_TABS.show({reader:readerAllowed()});
     if (!/^#l=/.test(location.hash)) renderList(); else if (!cur && !quiz) route();

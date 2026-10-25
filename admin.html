@@ -667,6 +667,18 @@ function publish(){
 var LVL = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
 var TYPES = [["n", "noun"], ["v", "verb"], ["a", "adjective"], ["d", "adverb"], ["p", "phrase"], ["r", "particle"]];
 var lessonRows = [], ed = null;   // every lesson; the one being edited
+// The words of a story, each once, as written (punctuation dropped), and a vowel-free key for matching.
+function storyWords(lines){
+  var seen = {}, out = [];
+  lines.forEach(function(x){ String(x.ar || "").split(/\s+/).forEach(function(t){ t = t.replace(/[.,،؛:!?؟«»"()]/g, ""); if (t && /[؀-ۿ]/.test(t) && !seen[t]) { seen[t] = 1; out.push(t); } }); });
+  return out;
+}
+function bareAr(s){ return String(s).replace(/[ً-ٰٟـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").replace(/[^ء-ي]/g, ""); }
+function glossFor(glosses, w){
+  if (glosses[w]) return glosses[w];
+  var b = bareAr(w), k = Object.keys(glosses).filter(function(x){ return bareAr(x) === b; })[0];
+  return k ? glosses[k] : "";
+}
 function loadLessons(){
   check(sb.from("lessons").select("*").order("level").order("unit").order("position")).then(function(r){
     lessonRows = r.data || []; renderLessonList();
@@ -685,10 +697,11 @@ function blankLesson(){
   var last = lessonRows[lessonRows.length - 1];
   return {level:last ? last.level : 1, unit:last ? last.unit : 1, unit_title:last ? last.unit_title : "", position:last ? last.position + 1 : 1,
     title_ar:"", title_en:"", lines:[{ar:"", en:""}], key_words:[{ar:"", en:"", type:"n", level:last ? last.level : 1}],
-    questions:[{ar:"", en:"", options:[{ar:"", en:""}, {ar:"", en:""}, {ar:"", en:""}], right:0, why:"", line:""}], is_free:true, published:false};
+    questions:[{ar:"", en:"", options:[{ar:"", en:""}, {ar:"", en:""}, {ar:"", en:""}], right:0, why:"", line:""}], glosses:{}, is_free:true, published:false};
 }
 function openLesson(l){
   ed = JSON.parse(JSON.stringify(l));
+  ed.glosses = ed.glosses || {};
   $("#lessonListWrap").hidden = true; $("#newLesson").hidden = true; $("#lessonForm").hidden = false;
   setMsg($("#lessonMsg"), "");
   renderLessonForm();
@@ -720,6 +733,7 @@ function renderLessonForm(){
         '<button class="btn small" type="button" data-op="del" data-list="lines" data-i="' + i + '" aria-label="Remove sentence ' + (i + 1) + '">Remove</button></div>';
     }).join("") +
     '<div><button class="btn small" type="button" data-op="add-line">Add sentence</button></div>' +
+    glossSection(l) +
     '<h3>Key words</h3>' +
     l.key_words.map(function(k, i){
       return '<div class="lrow kw">' + field("key_words." + i + ".ar", k.ar, {ar:true, label:"Key word " + (i + 1) + " in Arabic", ph:"Arabic, as in the story"}) +
@@ -749,6 +763,30 @@ function renderLessonForm(){
     (l.id ? '<button class="btn danger" type="button" data-op="delete" style="margin-left:auto">Delete lesson</button>' : "") + '</div>';
   $("#lessonForm").innerHTML = html;
 }
+function glossSection(l){
+  var words = storyWords(l.lines), missing = words.filter(function(w){ return !glossFor(l.glosses, w); }).length;
+  if (!words.length) return "";
+  return '<h3>Word meanings</h3><p class="muted" style="margin:-8px 0 0;font-size:.85rem">Learners tap any word in the story to see its meaning here. Fill them in with AI, then check each one.' +
+    (missing ? ' <b style="color:var(--learning)">' + missing + ' still empty.</b>' : "") + '</p>' +
+    '<div class="row-actions" style="margin-top:0"><button class="btn small" type="button" data-op="gloss">' + (missing === words.length ? "Fill in meanings with AI" : "Fill in the empty ones with AI") + '</button><span class="msg" id="glossMsg"></span></div>' +
+    '<div class="lgrid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">' + words.map(function(w){
+      var g = glossFor(l.glosses, w);
+      return '<label style="grid-template-columns:auto 1fr;align-items:center;gap:8px"><span class="ar" style="font-size:1.2rem;color:var(--ink)">' + esc(w) + '</span>' +
+        '<input type="text" data-gloss="' + esc(w) + '" value="' + esc(g) + '" placeholder="meaning"' + (g ? "" : ' class="missing"') + ' aria-label="Meaning of ' + esc(w) + '"></label>';
+    }).join("") + '</div>';
+}
+function fillGlosses(btn){
+  var msg = $("#glossMsg");
+  btn.disabled = true; setMsg(msg, "Asking the AI…");
+  sb.functions.invoke("gloss-lesson", {body:{lines:ed.lines}}).then(function(r){
+    var d = r.data || {};
+    if (r.error || d.error) throw new Error(d.error || "the gloss-lesson function didn't answer; check it's deployed");
+    var got = d.glosses || {}, added = 0;
+    storyWords(ed.lines).forEach(function(w){ if (!glossFor(ed.glosses, w)) { var g = glossFor(got, w); if (g) { ed.glosses[w] = g; added++; } } });
+    renderLessonForm();
+    setMsg($("#glossMsg"), added + " meaning" + (added === 1 ? "" : "s") + " filled in. Check them before saving.", "ok");
+  }).catch(function(err){ btn.disabled = false; setMsg(msg, "Couldn't fill in meanings: " + err.message, "bad"); });
+}
 function setPath(obj, path, value){
   var parts = path.split("."), o = obj;
   for (var i = 0; i < parts.length - 1; i++) o = o[parts[i]];
@@ -763,6 +801,8 @@ $("#lessonForm").addEventListener("input", function(e){
   }
   var r = e.target.closest("[data-right]");
   if (r && ed) ed.questions[+r.dataset.right].right = +r.value;
+  var g = e.target.closest("[data-gloss]");
+  if (g && ed) { ed.glosses[g.dataset.gloss] = g.value; g.classList.toggle("missing", !g.value.trim()); }
 });
 $("#lessonForm").addEventListener("change", function(e){
   var f = e.target.closest("[data-f]");
@@ -783,6 +823,7 @@ $("#lessonForm").addEventListener("click", function(e){
   }
   else if (op === "cancel") { if (confirm("Close without saving your changes?")) closeLesson(); return; }
   else if (op === "save") { saveLesson(); return; }
+  else if (op === "gloss") { fillGlosses(b); return; }
   else if (op === "delete") { deleteLesson(); return; }
   renderLessonForm();
 });
@@ -791,6 +832,7 @@ function cleanLesson(l){
   return {
     level:+l.level, unit:Math.max(1, +l.unit || 1), unit_title:trim(l.unit_title), position:Math.max(1, +l.position || 1),
     title_ar:trim(l.title_ar), title_en:trim(l.title_en), is_free:!!l.is_free, published:!!l.published,
+    glosses:storyWords(l.lines.map(function(x){ return {ar:trim(x.ar)}; })).reduce(function(o, w){ var g = trim(glossFor(l.glosses || {}, w)); if (g) o[w] = g; return o; }, {}),
     lines:l.lines.map(function(x){ return {ar:trim(x.ar), en:trim(x.en)}; }).filter(function(x){ return x.ar; }),
     key_words:l.key_words.map(function(k){ return {ar:trim(k.ar), en:trim(k.en), type:k.type || "n", level:+k.level || +l.level}; }).filter(function(k){ return k.ar && k.en; }),
     questions:l.questions.map(function(q){

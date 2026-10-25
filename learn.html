@@ -160,8 +160,10 @@ a{color:var(--lapis)}
 .player .grow{flex:1;color:var(--muted);font-size:.88rem}
 .story{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin-bottom:16px}
 .story .ar{display:block;font-size:clamp(1.45rem,4.6vw,1.75rem);line-height:2.1;text-align:right}
-.story .kw{border-bottom:2px dotted var(--lapis);cursor:pointer;border-radius:4px;padding:0 .04em}
-.story .kw:hover,.story .kw.sel{background:var(--lapis-soft)}
+.story .w{cursor:pointer;border-radius:4px;padding:0 .04em;-webkit-tap-highlight-color:transparent}
+.story .w:hover,.story .w.sel{background:var(--lapis-soft)}
+.wpop{max-width:calc(100vw - 20px)}
+.story .legend{margin:12px 0 0}
 .story .en{border-top:1px dashed var(--line);margin-top:12px;padding-top:10px;color:var(--muted);font-size:.95rem;line-height:1.6}
 .story .hint{margin:8px 0 0;color:var(--muted);font-size:.82rem}
 .sec-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:0 2px 8px}
@@ -212,6 +214,7 @@ a{color:var(--lapis)}
 <script src="vendor/supabase-js-2.117.2.js"></script>
 <script src="speech.js"></script>
 <script src="nav.js"></script>
+<script src="wordmatch.js"></script>
 <script src="learn.js"></script>
 </body>
 </html>
