@@ -579,7 +579,8 @@ function buildReview(sheet, cards, skips){
   }); });
   // Cards whose word is no longer anywhere in the sheet (and isn't being replaced by an edit).
   var replaced = new Set(news.filter(function(n){ return n.replaces; }).map(function(n){ return n.replaces.id; }));
-  var gone = cards.filter(function(c){ return c.is_active !== false && !inSheet.has(normAr(c.arabic)) && !replaced.has(c.id); });
+  // Only cards that came from the sheet can be "gone" from it; cards added by SQL (a1an…, sh…) never were in it.
+  var gone = cards.filter(function(c){ return /^r\d/.test(c.id) && c.is_active !== false && !inSheet.has(normAr(c.arabic)) && !replaced.has(c.id); });
   news.forEach(function(n){ if (n.replaces && !(drafts[n.key] && drafts[n.key].action)) n.action = "replace"; });
   review = {news:news, gone:gone, back:back, cards:cards};
 }
