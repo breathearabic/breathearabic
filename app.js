@@ -13,6 +13,38 @@ function shuffle(a){ for (var i = a.length - 1; i > 0; i--) { var j = Math.floor
 function norm(s){ return String(s).replace(/[ً-ْٰـ]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").toLowerCase(); }
 function lsGet(k){ try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
 function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+// Where a visitor came from, for the admin page's "sign-ups by source". The bio links carry a tag (?yt, ?insta,
+// ?tiktok, or ?from=yt); without one, the site they came from is used. The first one seen is kept until sign-up.
+var SOURCE_NAMES = {yt:"youtube", youtube:"youtube", ig:"instagram", insta:"instagram", instagram:"instagram",
+  tt:"tiktok", tiktok:"tiktok", fb:"facebook", facebook:"facebook"};
+function tagSource(){
+  var q = new URLSearchParams(location.search), tag = q.get("from");
+  if (!tag) q.forEach(function(v, k){ if (!tag && v === "" && /^[a-z0-9_-]{1,30}$/i.test(k)) tag = k; });
+  return tag ? SOURCE_NAMES[tag.toLowerCase()] || tag.toLowerCase() : "";
+}
+function referrerSource(){
+  var h = ""; try { h = new URL(document.referrer).hostname.replace(/^www\./, ""); } catch (e) { return ""; }
+  if (!h || h === location.hostname) return "";
+  if (/instagram\./.test(h)) return "instagram";
+  if (/youtube\.|youtu\.be/.test(h)) return "youtube";
+  if (/tiktok\./.test(h)) return "tiktok";
+  if (/facebook\.|^fb\./.test(h)) return "facebook";
+  if (/(^|\.)(google|bing|duckduckgo|yahoo|ecosia)\./.test(h)) return "search";
+  return h.slice(0, 30);
+}
+(function(){
+  var tag = tagSource(), seen = lsGet("arvocab-source");
+  if (tag && (!seen || !seen.tag)) lsSet("arvocab-source", {src:tag, tag:true});   // a tag beats a guessed referrer
+  else if (!seen) { var r = referrerSource(); if (r) lsSet("arvocab-source", {src:r}); }
+})();
+function sendSource(){
+  var seen = lsGet("arvocab-source");
+  if (!seen || seen.sent || !user) return;
+  sb.rpc("set_signup_source", {src:seen.src}).then(function(r){
+    if (!r.error) { seen.sent = true; lsSet("arvocab-source", seen); }
+  });
+}
 function lsDel(k){ try { localStorage.removeItem(k); } catch (e) {} }
 
 /* ---------- study days (a new day starts at 4am, like Anki) ---------- */
@@ -225,6 +257,7 @@ function loadRemote(){
     serverProgressCount = res[1].length;
     member = res[2].data || null;
     profile = res[3].data || null;
+    sendSource();
     summary = (res[4].data || []).map(function(s){ return {deck:s.deck || "main", level:+s.level, total:+s.total, free:+s.free}; });
     lsSet(ukey("cards"), CARDS);
     lsSet(ukey("member"), member);
@@ -1257,7 +1290,7 @@ $("#signinBody").addEventListener("submit", function(e){
     signin.email = email;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { signin.msg = "Please enter a valid email address."; signin.bad = true; return renderSignin(); }
     signin.busy = true; signin.msg = ""; renderSignin();
-    sb.auth.signInWithOtp({email:email, options:{emailRedirectTo:appUrl(), shouldCreateUser:true}}).then(function(r){
+    sb.auth.signInWithOtp({email:email, options:{emailRedirectTo:appUrl(lsGet("arvocab-source") ? "?from=" + encodeURIComponent(lsGet("arvocab-source").src) : ""), shouldCreateUser:true}}).then(function(r){
       signin.busy = false;
       if (r.error) { signin.msg = /rate|seconds/i.test(r.error.message) ? "Please wait a minute before asking for another email." : "Couldn't send the email: " + r.error.message; signin.bad = true; }
       else { signin.sent = true; signin.msg = ""; }

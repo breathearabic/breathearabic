@@ -1,0 +1,8 @@
+# Short links for social bios (Instagram won't take a "?"). Each forwards to the home page with a tag,
+# which the site saves as where the sign-up came from (admin page: Engagement, "Sign-ups by source").
+/ig      /?insta   302
+/insta   /?insta   302
+/yt      /?yt      302
+/tiktok  /?tiktok  302
+/tt      /?tiktok  302
+/fb      /?fb      302

@@ -144,6 +144,12 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
       <div id="eng" hidden>
         <h3 class="sub">How far people get</h3>
         <div class="funnel" id="engFunnel"></div>
+        <h3 class="sub">Sign-ups by source</h3>
+        <p class="note-sm">From the tag on your bio links (?yt, ?insta, ?tiktok) or, without one, the site people came from.</p>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Source</th><th>Last 30 days</th><th>All time</th></tr></thead>
+          <tbody id="engSources"></tbody>
+        </table></div>
         <h3 class="sub">People studying each day (last 30 days)</h3>
         <div class="bars" id="engBars"></div>
         <h3 class="sub">Where people stop</h3>
@@ -376,9 +382,25 @@ function ago(iso){
   return d < 1 ? "today" : d === 1 ? "yesterday" : d + " days ago";
 }
 function loadEngagement(){
-  check(sb.rpc("admin_engagement")).then(function(r){ renderEngagement(r.data); })
+  check(sb.rpc("admin_engagement")).then(function(r){ renderEngagement(r.data); loadSources(); })
     .catch(function(e){ setMsg($("#engMsg"), "Couldn't load engagement: " + e.message + " (run 013_admin_engagement.sql in Supabase)", "bad"); });
 }
+// Sign-ups by source: the bio tag (?yt, ?insta, ?tiktok) or the site people came from. Needs 029_signup_source.sql.
+function loadSources(){
+  check(sb.from("profiles").select("source,created_at,role")).then(function(r){
+    var month = Date.now() - 30 * 86400000, rows = {};
+    (r.data || []).filter(function(p){ return p.role !== "admin"; }).forEach(function(p){
+      var k = p.source || (Date.parse(p.created_at) < SOURCE_START ? "before tracking" : "unknown");
+      rows[k] = rows[k] || {all:0, month:0};
+      rows[k].all++; if (Date.parse(p.created_at) >= month) rows[k].month++;
+    });
+    var names = {youtube:"YouTube", instagram:"Instagram", tiktok:"TikTok", facebook:"Facebook", search:"Search engines"};
+    $("#engSources").innerHTML = Object.keys(rows).sort(function(a, b){ return rows[b].all - rows[a].all; }).map(function(k){
+      return '<tr><td>' + esc(names[k] || k) + '</td><td>' + rows[k].month + '</td><td>' + rows[k].all + '</td></tr>';
+    }).join("") || '<tr><td colspan="3">No sign-ups yet.</td></tr>';
+  }).catch(function(e){ $("#engSources").innerHTML = '<tr><td colspan="3">Couldn\'t load sources: ' + esc(e.message) + ' (run 029_signup_source.sql in Supabase)</td></tr>'; });
+}
+var SOURCE_START = Date.parse("2026-10-27T00:00:00Z");   // accounts before this were made before tracking
 function renderEngagement(data){
   var now = Date.now(), week = 7 * 86400000;
   var users = (data.users || []).filter(function(u){ return u.role !== "admin"; });   // your own study isn't counted
