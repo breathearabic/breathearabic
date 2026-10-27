@@ -1,5 +1,5 @@
 /* Breathe Arabic service worker: keeps the app working offline. */
-const VERSION = "arvocab-v61";
+const VERSION = "arvocab-v62";
 const FONT_CACHE = "arvocab-fonts";
 const SHELL = [
   "./",
@@ -58,6 +58,11 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
+// Only the app's own start page counts as the start page: not the short bio links like /ig/ (they just forward on).
+function isStartPage(path) {
+  const root = new URL(self.registration.scope).pathname;
+  return path === root || path === root + "index.html";
+}
 async function networkFirst(req) {
   const cache = await caches.open(VERSION);
   try {
@@ -68,13 +73,13 @@ async function networkFirst(req) {
     // Store each page under its own address (the start page also as index.html).
     if (res && res.ok) {
       const path = new URL(req.url).pathname;
-      const isStart = path.endsWith("/") || path.endsWith("/index.html");
+      const isStart = isStartPage(path);
       cache.put(isStart ? "./index.html" : path, res.clone());
     }
     return res;
   } catch (err) {
     const path = new URL(req.url).pathname;
-    const isStart = path.endsWith("/") || path.endsWith("/index.html");
+    const isStart = isStartPage(path);
     if (!isStart) {
       const page = (await cache.match(path, { ignoreSearch: true })) || (await cache.match(req, { ignoreSearch: true })) ||
         (!path.endsWith(".html") ? await cache.match(path + ".html", { ignoreSearch: true }) : null);
