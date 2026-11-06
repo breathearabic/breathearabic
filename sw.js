@@ -1,5 +1,5 @@
 /* Breathe Arabic service worker: keeps the app working offline. */
-const VERSION = "arvocab-v63";
+const VERSION = "arvocab-v64";
 const FONT_CACHE = "arvocab-fonts";
 const SHELL = [
   "./",

@@ -353,11 +353,10 @@ function levelLabel(cap){
 }
 function joinNames(a){ return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
 /* ---------- daily goal ----------
-   Each learner picks 10, 15 or 30 minutes a day. That sets the new words a day and the most reviews in a day,
-   shared by both decks (about 8 seconds a review, 20-25 seconds for a new word with its repeats that day).
-   Reviews come first, oldest first, up to the day's most; the rest wait for tomorrow. While reviews are waiting,
-   new words pause, so a missed day doesn't snowball. */
-var GOALS = {10:{n:5, r:75, name:"Casual"}, 15:{n:10, r:110, name:"Regular"}, 30:{n:20, r:225, name:"Serious"}};
+   Each learner picks 10, 15 or 30 minutes a day, shared by both decks. New words always come (about 20 seconds
+   each with their repeats that day), and reviews fill the rest of the time (about 8 seconds each), oldest first.
+   Reviews that don't fit move to tomorrow: a little worse for memory, but the day always fits the goal. */
+var GOALS = {10:{n:5, r:60, name:"Casual"}, 15:{n:10, r:85, name:"Regular"}, 30:{n:20, r:175, name:"Serious"}};
 function goalMins(){ var g = user ? lsGet(ukey("goal")) : null; return GOALS[g] ? g : null; }   // null until chosen
 function poolFor(d){ var keep = prefs.deck; prefs.deck = d; try { return pool(); } finally { prefs.deck = keep; } }
 function deckUsed(d){
@@ -411,9 +410,9 @@ function newStartedToday(now){
   }
   return n;
 }
-function newLimitToday(now, paused){
+function newLimitToday(now){
   var e = prefs.extra, extra = e && e.day === dayNum(now) && (e.deck || "main") === prefs.deck ? e.n : 0;
-  return (paused ? 0 : deckNewPerDay()) + extra;
+  return deckNewPerDay() + extra;
 }
 /* A word still being learned that was last answered earlier today, before this visit to the site, waits until
    tomorrow: once someone leaves, the day's study is over and words don't reappear when they open the site again.
@@ -436,7 +435,7 @@ function queueInfo(now){
   // New words come level by level (all A1 first, then A2, ...), in deck order within a level.
   // Words already studied are untouched: they follow their own memory schedule.
   fresh.sort(function(a, b){ return (a.lv - b.lv) || (a.so - b.so); });
-  var newLeft = Math.max(0, newLimitToday(now, rb.waiting > 0) - newStartedToday(now));
+  var newLeft = Math.max(0, newLimitToday(now) - newStartedToday(now));
   return {pool:p, learnDue:learnDue, learnLater:learnLater, revDue:revDue, fresh:fresh, newShown:Math.min(newLeft, fresh.length), newLeft:newLeft, learned:learned, learning:learning, held:held, waiting:rb.waiting};
 }
 /* Spacing: a word you've just answered sits out until SPACING other cards have been shown (or RECENT_MS
@@ -849,9 +848,8 @@ function renderCard(){
     }
     var moreBtn = "";
     if (q.waiting) {
-      // Today's goal is used up: the rest of the reviews wait, oldest first tomorrow, and new words pause meanwhile.
-      lines.push("You've done today's reviews for your " + goalMins() + "-minute goal. " + q.waiting + " more " + (q.waiting === 1 ? "is" : "are") + " waiting and will come first tomorrow.");
-      if (q.fresh.length) lines.push("New words are paused until you've caught up, so your reviews don't pile up.");
+      // Today's goal is used up: the reviews that didn't fit move to tomorrow, oldest first.
+      lines.push("That's your " + goalMins() + " minutes for today. " + q.waiting + " more review" + (q.waiting === 1 ? " has" : "s have") + " moved to tomorrow.");
       moreBtn = '<button class="btn" data-act="more-rev" type="button">Review ' + Math.min(25, q.waiting) + ' more now</button>';
     } else if (q.fresh.length && q.newLeft === 0) {
       lines.push("You've started " + newStartedToday(now) + " new words today, which is your daily limit. More arrive tomorrow.");
@@ -1568,7 +1566,7 @@ function renderHome(){
     '<div class="stat new"><b>' + fresh + '</b><span>new words</span></div>' +
     '<div class="stat lrn"><b>' + learning + '</b><span>learning</span></div>';
   var ahead = learnAheadToday(q, now), work = due + fresh + ahead;
-  $("#todayEta").textContent = work ? "about " + Math.max(1, Math.round(((due + ahead) * 8 + fresh * 15) / 60)) + " min" : "";
+  $("#todayEta").textContent = work ? "about " + Math.max(1, Math.round(((due + ahead) * 8 + fresh * 20) / 60)) + " min" : "";
   var cta;
   if (work) cta = '<a class="btn primary" href="#study/cards">' + (due ? "Start studying" : fresh ? "Learn new words" : "Finish today's words") + '</a><a class="btn" href="#study/quiz">Quiz</a>';
   else {
