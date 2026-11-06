@@ -287,6 +287,7 @@ function refresh(){
   if (!user || !navigator.onLine) return Promise.resolve();
   lastPull = Date.now();
   loadRemind();
+  loadGoal();
   return loadRemote().then(function(){
     if (!fc.revealed) fc.cur = null;
     renderAll();
@@ -351,10 +352,42 @@ function levelLabel(cap){
   return prefs.levels.length >= 6 ? (cap ? "All levels" : "all levels") : joinNames(levelNames());
 }
 function joinNames(a){ return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
-// Each deck has its own new-words-a-day limit and its own count, e.g. 20 general words and 5 Quran words.
+/* ---------- daily goal ----------
+   Each learner picks 10, 15 or 30 minutes a day. That sets the new words a day and the most reviews in a day,
+   shared by both decks (about 8 seconds a review, 20-25 seconds for a new word with its repeats that day).
+   Reviews come first, oldest first, up to the day's most; the rest wait for tomorrow. While reviews are waiting,
+   new words pause, so a missed day doesn't snowball. */
+var GOALS = {10:{n:5, r:75, name:"Casual"}, 15:{n:10, r:110, name:"Regular"}, 30:{n:20, r:225, name:"Serious"}};
+function goalMins(){ var g = user ? lsGet(ukey("goal")) : null; return GOALS[g] ? g : null; }   // null until chosen
+function poolFor(d){ var keep = prefs.deck; prefs.deck = d; try { return pool(); } finally { prefs.deck = keep; } }
+function deckUsed(d){
+  for (var id in prog.p) { var c = byId.get(id); if (c && (c.deck || "main") === d) return true; }
+  return false;
+}
+// Each deck has its own new-words-a-day count. With a goal, studying both decks splits its new words about 2:1
+// (e.g. 7 general words and 3 Islamic terms). "New words a day" in the study options overrides one deck.
 function deckNewPerDay(){
-  var m = prefs.newPerDayByDeck || {};
-  return m[prefs.deck] != null ? m[prefs.deck] : prefs.deck === "main" ? (prefs.newPerDay || 20) : 10;
+  var m = prefs.newPerDayByDeck || {}, g = goalMins();
+  if (m[prefs.deck] != null) return m[prefs.deck];
+  if (!g) return prefs.deck === "main" ? (prefs.newPerDay || 20) : 10;
+  var n = GOALS[g].n, isl = Math.round(n / 3);
+  if (!deckUsed("main") || !deckUsed("islamic")) return n;
+  return prefs.deck === "islamic" ? isl : n - isl;
+}
+function reviewsDoneToday(now){
+  var start = dayStart(now), n = 0;
+  for (var id in prog.p) { var s = prog.p[id]; if (s.last >= start && (s.f || 0) < start) n++; }   // seen before today, answered today
+  return n;
+}
+// Which due reviews fit in today's goal, across both decks: {ok: ids allowed, waiting: how many wait for tomorrow}.
+function reviewBudget(now){
+  var g = goalMins();
+  if (!g) return {ok:null, waiting:0};
+  var e = prefs.extraRev, extra = e && e.day === dayNum(now) ? e.n : 0;
+  var left = Math.max(0, GOALS[g].r + extra - reviewsDoneToday(now)), due = [];
+  Object.keys(DECKS).forEach(function(d){ poolFor(d).forEach(function(c){ var s = state(c.id); if (s && s.st === 2 && s.due <= now) due.push(s.due + "|" + c.id); }); });
+  due.sort(function(a, b){ return parseFloat(a) - parseFloat(b); });
+  return {ok:new Set(due.slice(0, left).map(function(k){ return k.slice(k.indexOf("|") + 1); })), waiting:Math.max(0, due.length - left)};
 }
 // Today's work left in the deck you're not studying: reviews due plus new words still allowed.
 function otherDeckWork(now){
@@ -378,9 +411,9 @@ function newStartedToday(now){
   }
   return n;
 }
-function newLimitToday(now){
+function newLimitToday(now, paused){
   var e = prefs.extra, extra = e && e.day === dayNum(now) && (e.deck || "main") === prefs.deck ? e.n : 0;
-  return deckNewPerDay() + extra;
+  return (paused ? 0 : deckNewPerDay()) + extra;
 }
 /* A word still being learned that was last answered earlier today, before this visit to the site, waits until
    tomorrow: once someone leaves, the day's study is over and words don't reappear when they open the site again.
@@ -398,11 +431,13 @@ function queueInfo(now){
   });
   var byDue = function(a, b){ return state(a.id).due - state(b.id).due; };
   learnDue.sort(byDue); learnLater.sort(byDue); revDue.sort(byDue);
+  var rb = reviewBudget(now);
+  if (rb.ok) revDue = revDue.filter(function(c){ return rb.ok.has(c.id); });
   // New words come level by level (all A1 first, then A2, ...), in deck order within a level.
   // Words already studied are untouched: they follow their own memory schedule.
   fresh.sort(function(a, b){ return (a.lv - b.lv) || (a.so - b.so); });
-  var newLeft = Math.max(0, newLimitToday(now) - newStartedToday(now));
-  return {pool:p, learnDue:learnDue, learnLater:learnLater, revDue:revDue, fresh:fresh, newShown:Math.min(newLeft, fresh.length), newLeft:newLeft, learned:learned, learning:learning, held:held};
+  var newLeft = Math.max(0, newLimitToday(now, rb.waiting > 0) - newStartedToday(now));
+  return {pool:p, learnDue:learnDue, learnLater:learnLater, revDue:revDue, fresh:fresh, newShown:Math.min(newLeft, fresh.length), newLeft:newLeft, learned:learned, learning:learning, held:held, waiting:rb.waiting};
 }
 /* Spacing: a word you've just answered sits out until SPACING other cards have been shown (or RECENT_MS
    has passed), so you never see the same word back-to-back.
@@ -527,11 +562,77 @@ function setMode(m){
   if (m === "quiz" && !qz.qs) renderQuizStart();
   if (m === "list") renderList();
 }
-var typeSel = $("#typeSel"), dirSel = $("#dirSel"), newSel = $("#newSel");
-typeSel.value = prefs.type; dirSel.value = prefs.dir; newSel.value = String(deckNewPerDay());
+var typeSel = $("#typeSel"), dirSel = $("#dirSel"), newSel = $("#newSel"), goalSel = $("#goalSel");
+typeSel.value = prefs.type; dirSel.value = prefs.dir;
 typeSel.addEventListener("change", function(){ prefs.type = this.value; savePrefs(); onFilterChange(); });
 dirSel.addEventListener("change", function(){ prefs.dir = this.value; savePrefs(); if (prefs.mode === "cards") renderCard(); if (qz.qs && qz.i < qz.qs.length) renderQuestion(); });
-newSel.addEventListener("change", function(){ prefs.newPerDayByDeck = Object.assign({}, prefs.newPerDayByDeck); prefs.newPerDayByDeck[prefs.deck] = +this.value; savePrefs(); fc.cur = null; renderStairs(); renderCard(); });
+// "From my daily goal" (empty) follows the goal; a number fixes this deck's new words a day.
+newSel.addEventListener("change", function(){
+  prefs.newPerDayByDeck = Object.assign({}, prefs.newPerDayByDeck);
+  if (this.value === "") delete prefs.newPerDayByDeck[prefs.deck]; else prefs.newPerDayByDeck[prefs.deck] = +this.value;
+  savePrefs(); fc.cur = null; syncGoalUi(); renderStairs(); renderCard();
+});
+goalSel.addEventListener("change", function(){ setGoal(+this.value); });
+function syncGoalUi(){
+  var g = user ? goalMins() : null, m = prefs.newPerDayByDeck || {};
+  newSel.querySelector("option[value='']").hidden = !g;
+  newSel.value = m[prefs.deck] != null ? String(m[prefs.deck]) : g ? "" : String(deckNewPerDay());
+  goalSel.value = String(g || 15);
+  $("#goalWrap").hidden = !g;
+  $("#goalRow").hidden = !g;
+  if (g) $("#goalLabel").textContent = g + " minutes (" + GOALS[g].name.toLowerCase() + ")";
+}
+
+/* The daily goal is saved on this device straight away and on the account (030_daily_goal.sql) so it follows
+   the learner. Without that column the goal just stays on this device. */
+var goalSynced = false;
+function loadGoal(){
+  var uid = user.id;
+  // Asked for on its own, so the rest of the app still loads if 030_daily_goal.sql hasn't been run yet.
+  sb.from("profiles").select("daily_goal").eq("id", uid).maybeSingle().then(function(r){
+    if (!user || user.id !== uid) return;
+    goalSynced = !r.error;
+    var g = r.error || !r.data ? null : r.data.daily_goal;
+    if (GOALS[g]) { if (g !== goalMins()) { lsSet(ukey("goal"), g); afterGoalChange(); } }
+    else if (goalMins()) { if (goalSynced) saveGoalRemote(goalMins()); }
+    else openGoal(true);
+  });
+}
+function saveGoalRemote(g){
+  var uid = user.id;
+  sb.from("profiles").update({daily_goal:g}).eq("id", uid).then(function(r){ if (r.error) console.warn("Saving the daily goal failed", r.error); });
+}
+function setGoal(g){
+  if (!GOALS[g] || !user) return;
+  var first = !goalMins();
+  lsSet(ukey("goal"), g);
+  prefs.newPerDayByDeck = {}; prefs.extraRev = null; savePrefs();   // the goal now decides new words for both decks
+  if (goalSynced) saveGoalRemote(g);
+  $("#goalChooser").hidden = true;
+  afterGoalChange();
+  toast((first ? "Your daily goal is " : "Daily goal changed to ") + g + " minutes: " + GOALS[g].n + " new words a day. You can change it any time.");
+}
+function afterGoalChange(){
+  syncGoalUi(); fc.cur = null; fc.revealed = false;
+  if (!CARDS.length) return;
+  renderStairs();
+  if (view === "study") { if (prefs.mode === "cards") renderCard(); } else renderHome();
+}
+function openGoal(first){
+  var box = $("#goalChooser"), g = goalMins();
+  box.querySelectorAll("[data-goal]").forEach(function(b){ b.classList.toggle("current", +b.dataset.goal === g); });
+  $("#goalCancel").hidden = !!first;
+  box.dataset.first = first ? "1" : "";
+  box.hidden = false;
+  box.querySelector(first ? "[data-goal='15']" : "[data-goal='" + g + "']").focus();
+}
+$("#goalChooser").addEventListener("click", function(e){
+  var b = e.target.closest("[data-goal]");
+  if (b) return setGoal(+b.dataset.goal);
+  if (!this.dataset.first && (e.target.closest("[data-act=close-goal]") || e.target === this)) this.hidden = true;
+});
+document.addEventListener("keydown", function(e){ var box = $("#goalChooser"); if (e.key === "Escape" && !box.hidden && !box.dataset.first) box.hidden = true; });
+$("#goalRow").addEventListener("click", function(e){ if (e.target.closest("[data-act=goal-open]")) openGoal(false); });
 var srcSel = $("#srcSel");
 srcSel.value = prefs.source === "mine" || prefs.source === "hard" ? prefs.source : "all";
 srcSel.addEventListener("change", function(){ prefs.source = this.value; savePrefs(); onFilterChange(); });
@@ -747,19 +848,24 @@ function renderCard(){
       lines.push("Next reviews: " + sameDay + " word" + (sameDay === 1 ? "" : "s") + " " + whenLabel(state(futureRev[0].id).due, now) + ".");
     }
     var moreBtn = "";
-    if (q.fresh.length && q.newLeft === 0) {
+    if (q.waiting) {
+      // Today's goal is used up: the rest of the reviews wait, oldest first tomorrow, and new words pause meanwhile.
+      lines.push("You've done today's reviews for your " + goalMins() + "-minute goal. " + q.waiting + " more " + (q.waiting === 1 ? "is" : "are") + " waiting and will come first tomorrow.");
+      if (q.fresh.length) lines.push("New words are paused until you've caught up, so your reviews don't pile up.");
+      moreBtn = '<button class="btn" data-act="more-rev" type="button">Review ' + Math.min(25, q.waiting) + ' more now</button>';
+    } else if (q.fresh.length && q.newLeft === 0) {
       lines.push("You've started " + newStartedToday(now) + " new words today, which is your daily limit. More arrive tomorrow.");
       moreBtn = '<button class="btn" data-act="more-new" type="button">Learn ' + Math.min(10, q.fresh.length) + ' more new words today</button>';
     } else if (!q.fresh.length) {
-      lines.push(lockedSelected().length ? "You've started every free word you've chosen. Members can keep going with " + joinNames(lockedSelected().map(function(l){ return LV[l]; })) + "." : "You've started every word in " + levelLabel() + ". Add another level above to keep going.");
+      lines.push(lockedSelected().length ? "You've started every free word you've chosen. Members can keep going with " + joinNames(lockedSelected().map(function(l){ return LV[l]; })) + "." : "You've started every word in " + levelLabel() + ". Add another " + (byTopic() ? "category" : "level") + " above to keep going.");
     }
     // If the other deck still has work today, offer that first instead of a quiz.
     var other = otherDeckWork(now), goBtn = other
       ? '<button class="btn primary" data-act="go-deck" data-deck="' + other.deck + '" type="button">Continue with ' + esc(DECKS[other.deck].name) + ' (' + other.label + ')</button>'
       : '<button class="btn primary" data-act="to-quiz" type="button">Quiz yourself instead</button>';
     if (other) moreBtn = moreBtn || '<button class="btn" data-act="to-quiz" type="button">Quiz instead</button>';
-    el.innerHTML = html + '<div class="panel-msg"><h2>' + (other ? "This deck is done for today" : "All caught up") + '</h2><p>' +
-      (other ? esc(DECKS[other.deck].name) + ' still has ' + other.label + ' for today.' : 'Nothing else is due in ' + levelLabel() + ' right now.') + '</p>' +
+    el.innerHTML = html + '<div class="panel-msg"><h2>' + (other ? "This deck is done for today" : q.waiting ? "Today's goal is done" : "All caught up") + '</h2><p>' +
+      (other ? esc(DECKS[other.deck].name) + ' still has ' + other.label + ' for today.' : q.waiting ? 'Well done. That\'s your study for today.' : 'Nothing else is due in ' + levelLabel() + ' right now.') + '</p>' +
       '<div class="done-list">' + lines.map(function(x){ return '<p>' + esc(x) + '</p>'; }).join("") + '</div>' +
       '<div class="actions' + (moreBtn ? "" : " single") + '">' + moreBtn + goBtn + '</div></div>';
     if (nextLearn) {
@@ -843,6 +949,11 @@ $("#panel-cards").addEventListener("click", function(e){
       var same = prefs.extra && prefs.extra.day === day && (prefs.extra.deck || "main") === prefs.deck;
       prefs.extra = {day:day, deck:prefs.deck, n:(same ? prefs.extra.n : 0) + 10};
       savePrefs(); fc.cur = null; renderStairs(); return renderCard();
+    }
+    if (act === "more-rev") {
+      var d2 = dayNum(Date.now()), sameR = prefs.extraRev && prefs.extraRev.day === d2;
+      prefs.extraRev = {day:d2, n:(sameR ? prefs.extraRev.n : 0) + 25};
+      savePrefs(); fc.cur = null; return renderCard();
     }
     if (act === "subscribe") return;
   }
@@ -1146,6 +1257,7 @@ function renderAccount(){
   if (paid) btns += '<button class="btn" data-act="manage" type="button">Manage or cancel subscription</button>';
   if (isAdmin) btns += '<a class="btn" href="admin">Admin</a>';
   $("#acctBtns").innerHTML = btns;
+  syncGoalUi();
   setSaveStatus();
 }
 /* ---------- daily reminder email ---------- */
@@ -1240,6 +1352,7 @@ function showLoadError(){
 /* ---------- sign in ---------- */
 var signin = {email:"", sent:false, busy:false, msg:"", bad:false};
 function showSignedOut(){
+  $("#goalChooser").hidden = true;
   user = null; profile = null; member = null; CARDS = []; byId = new Map(); prog.p = {}; importState = null; remind = null; renderRemind();
   $("#appMain").hidden = true; $("#landing").hidden = false; $("#topSub").hidden = true; $("#topnav").hidden = true;
   if (window.BA_TABS) BA_TABS.hide();
@@ -1527,7 +1640,7 @@ function closeChooser(){ $("#deckChooser").hidden = true; pendingStudy = null; }
 function setDeck(d){
   if (prefs.deck === d) return;
   prefs.deck = d; prefs.source = "all"; fc.cur = null; fc.revealed = false; fc.undo = null; savePrefs();
-  newSel.value = String(deckNewPerDay());
+  syncGoalUi();
   if (CARDS.length) renderStairs();   // levels for General Vocabulary, categories for Islamic terms
 }
 document.addEventListener("click", function(e){

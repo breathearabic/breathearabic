@@ -430,6 +430,9 @@ footer p{margin:0;max-width:62ch}
 .chooser[hidden]{display:none}
 .chooser-box{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px;width:min(420px,100%);display:grid;gap:10px;text-align:center}
 .chooser-box h2{margin:0 0 4px;font-size:1.2rem}
+.chooser-note{margin:-4px 0 6px;font-size:.9rem;color:var(--muted)}
+.acct .goal-line{margin:12px 0 0;font-size:.92rem}
+.acct .goal-line .link{margin-left:6px}
 .deck-pick{display:grid;gap:3px;text-align:left;background:var(--paper);border:1.5px solid var(--line);border-radius:14px;padding:14px 16px;color:var(--ink)}
 .deck-pick b{font-size:1.05rem}
 .deck-pick small{color:var(--muted);font-size:.85rem}
@@ -568,6 +571,7 @@ footer p{margin:0;max-width:62ch}
       <p class="who" id="acctEmail"></p>
       <p id="acctPlan"></p>
       <p class="save" id="saveStatus" aria-live="polite"></p>
+      <p class="goal-line" id="goalRow" hidden>Daily goal: <b id="goalLabel"></b> <button class="link" data-act="goal-open" type="button">Change</button></p>
       <label class="remind" id="remindRow" hidden><input type="checkbox" id="remindBox"> <span>Email me a daily reminder<small id="remindNote">One short email in the early evening on days you have words due and haven't studied yet.</small></span></label>
       <div class="acct-btns" id="acctBtns"></div>
       <div class="links">
@@ -626,8 +630,16 @@ footer p{margin:0;max-width:62ch}
         <option value="en">English</option>
       </select>
     </label>
+    <label id="goalWrap" hidden>Daily goal
+      <select id="goalSel">
+        <option value="10">10 minutes</option>
+        <option value="15">15 minutes</option>
+        <option value="30">30 minutes</option>
+      </select>
+    </label>
     <label id="newWrap">New words a day
       <select id="newSel">
+        <option value="" hidden>From my daily goal</option>
         <option value="5">5</option>
         <option value="10">10</option>
         <option value="15">15</option>
@@ -647,7 +659,7 @@ footer p{margin:0;max-width:62ch}
 
   </section>
   <footer>
-    <p>Words come up in order of when they're due, oldest first, whatever their level, and the same word never comes back until a few others have been shown. New words come level by level (all A1 first, then A2, and so on) and come back after 1 minute and then 10 minutes, then tomorrow, like Anki. Once nothing else is left, those come up straight away, so you can finish the day's study in one sitting and come back tomorrow. Reviews are scheduled with FSRS, the memory model Anki uses, with two buttons like a pass/fail setup. Each time you remember a word, its memory gets stronger and the next review moves further out; each time you forget it, it goes back to learning. A word counts as <b>known</b> once its memory lasts three weeks, which usually takes three or four correct answers spread over a couple of weeks. A word forgotten six times becomes a <b>hard word</b>, which you can practise on its own. A new study day starts at 4am.</p>
+    <p>Your daily goal (10, 15 or 30 minutes) sets how many new words you get and the most reviews in a day, across both decks. Reviews come first; if more are due than fit, the rest wait until tomorrow and new words pause until you've caught up. Words come up in order of when they're due, oldest first, whatever their level, and the same word never comes back until a few others have been shown. New words come level by level (all A1 first, then A2, and so on) and come back after 1 minute and then 10 minutes, then tomorrow, like Anki. Once nothing else is left, those come up straight away, so you can finish the day's study in one sitting and come back tomorrow. Reviews are scheduled with FSRS, the memory model Anki uses, with two buttons like a pass/fail setup. Each time you remember a word, its memory gets stronger and the next review moves further out; each time you forget it, it goes back to learning. A word counts as <b>known</b> once its memory lasts three weeks, which usually takes three or four correct answers spread over a couple of weeks. A word forgotten six times becomes a <b>hard word</b>, which you can practise on its own. A new study day starts at 4am.</p>
     <p>The levels are estimates for learners of Classical Arabic, based on how common each word is in the Quran, hadith and classical texts, and how abstract it is.</p>
     <p>Quran verse translations: Saheeh International.</p>
     <p><a href="privacy">Privacy</a> · <a href="terms">Terms</a></p>
@@ -662,6 +674,16 @@ footer p{margin:0;max-width:62ch}
     <button class="deck-pick" data-deck="islamic" type="button"><b>Islamic terms</b><small></small></button>
     <button class="deck-pick" data-deck="main" type="button"><b>General Vocabulary</b><small></small></button>
     <button class="link" data-act="close-chooser" type="button">Cancel</button>
+  </div>
+</div>
+<div class="chooser" id="goalChooser" hidden>
+  <div class="chooser-box" role="dialog" aria-modal="true" aria-labelledby="goalTitle">
+    <h2 id="goalTitle">How much time do you want to spend each day?</h2>
+    <p class="chooser-note">Your new words and reviews are set to fit. You can change this any time.</p>
+    <button class="deck-pick" data-goal="10" type="button"><b>10 minutes</b><small>Casual: 5 new words a day</small></button>
+    <button class="deck-pick" data-goal="15" type="button"><b>15 minutes</b><small>Regular: 10 new words a day</small></button>
+    <button class="deck-pick" data-goal="30" type="button"><b>30 minutes</b><small>Serious: 20 new words a day</small></button>
+    <button class="link" data-act="close-goal" id="goalCancel" type="button">Cancel</button>
   </div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
