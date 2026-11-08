@@ -2,7 +2,7 @@
 "use strict";
 var CFG = window.ARVOCAB_CONFIG || {};
 var LV = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
-var TY = {n:"noun", v:"verb", a:"adjective", d:"adverb", p:"phrase", r:"particle"};
+var TY = {n:"noun", v:"verb", a:"adjective", d:"adverb", p:"phrase", e:"expression", r:"particle"};
 var $ = function(s){ return document.querySelector(s); };
 var main = $("#main"), pop = $("#pop");
 var PAGE = 1000;

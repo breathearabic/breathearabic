@@ -402,6 +402,7 @@ footer p{margin:0;max-width:62ch}
 .stat{background:var(--paper);border-radius:12px;padding:10px 12px}
 .stat b{display:block;font-size:1.7rem;line-height:1.15;font-variant-numeric:tabular-nums}
 .stat span{font-size:.82rem;color:var(--muted)}
+.today-split{margin:8px 0 0;font-size:.85rem;color:var(--muted)}
 .stat.due b{color:var(--known)} .stat.new b{color:var(--lapis)} .stat.lrn b{color:var(--learning)}
 .today-cta{display:flex;gap:10px;flex-wrap:wrap}
 .lesson-card{display:grid;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin-bottom:14px;color:var(--ink);text-decoration:none}
@@ -551,6 +552,7 @@ footer p{margin:0;max-width:62ch}
       <div class="today-head"><h2 id="todayTitle">Today</h2><span id="todayEta" class="muted"></span></div>
       <div class="deck-switch" id="todayDecks" role="tablist" aria-label="Deck"></div>
       <div class="today-stats" id="todayStats"></div>
+      <p class="today-split" id="todaySplit" hidden></p>
       <div class="today-cta" id="todayCta"></div>
     </section>
 
@@ -621,6 +623,7 @@ footer p{margin:0;max-width:62ch}
         <option value="v">Verbs</option>
         <option value="a">Adjectives</option>
         <option value="p">Phrases</option>
+        <option value="e">Expressions</option>
         <option value="other">Adverbs and particles</option>
       </select>
     </label>

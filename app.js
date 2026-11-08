@@ -2,7 +2,7 @@
 "use strict";
 var CFG = window.ARVOCAB_CONFIG || {};
 var LV = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
-var TY = {n:"noun", v:"verb", a:"adjective", d:"adverb", p:"phrase", r:"particle"};
+var TY = {n:"noun", v:"verb", a:"adjective", d:"adverb", p:"phrase", e:"expression", r:"particle"};
 var CARDS = [], byId = new Map();
 var $ = function(s){ return document.querySelector(s); };
 var DAY = 86400000, MINUTE = 60000, ROLLOVER = 4;
@@ -1504,9 +1504,10 @@ function learnAheadToday(q, now){ var dayEnd = dayStart(now) + DAY; return q.lea
 // Today's work left in deck d: reviews and learning words due, new words still allowed, and learning words due later today.
 function deckToday(d, now){
   var keep = prefs.deck; prefs.deck = d;
-  var q = queueInfo(now), work = q.learnDue.length + q.revDue.length + q.newShown + learnAheadToday(q, now);
+  var q = queueInfo(now), ahead = learnAheadToday(q, now), work = q.learnDue.length + q.revDue.length + q.newShown + ahead;
+  var secs = (q.learnDue.length + q.revDue.length + ahead) * 8 + q.newShown * 20, perDay = deckNewPerDay();
   prefs.deck = keep;
-  return {work: work};
+  return {work: work, secs: secs, perDay: perDay};
 }
 var homeDeckPicked = false;
 /* The next lesson from the Learn tab: the first published lesson the learner can open and hasn't finished.
@@ -1548,8 +1549,8 @@ function renderHome(){
   if (!DECKS[prefs.deck]) prefs.deck = "main";
   // Today shows one deck at a time, with a switch that says how much is left in each. On the first look this
   // visit, it opens on a deck that still has work if the chosen one is finished.
-  var left = {};
-  Object.keys(DECKS).forEach(function(d){ left[d] = deckToday(d, now).work; });
+  var left = {}, secs = 0, split = {};
+  Object.keys(DECKS).forEach(function(d){ var t = deckToday(d, now); left[d] = t.work; secs += t.secs; split[d] = t.perDay; });
   if (!homeDeckPicked && !left[prefs.deck]) {
     var other = Object.keys(DECKS).filter(function(d){ return left[d]; })[0];
     if (other) setDeck(other);
@@ -1566,7 +1567,12 @@ function renderHome(){
     '<div class="stat new"><b>' + fresh + '</b><span>new words</span></div>' +
     '<div class="stat lrn"><b>' + learning + '</b><span>learning</span></div>';
   var ahead = learnAheadToday(q, now), work = due + fresh + ahead;
-  $("#todayEta").textContent = work ? "about " + Math.max(1, Math.round(((due + ahead) * 8 + fresh * 20) / 60)) + " min" : "";
+  // The time is for both decks together, so it matches the daily goal.
+  $("#todayEta").textContent = secs ? "about " + Math.max(1, Math.round(secs / 60)) + " min" + (left.main && left.islamic ? " for both decks" : "") : "";
+  // With a goal, say how its new words are shared between the decks (e.g. "10 new words today: 7 general, 3 Islamic").
+  var both = goalMins() && deckUsed("main") && deckUsed("islamic");
+  $("#todaySplit").hidden = !both;
+  if (both) $("#todaySplit").textContent = (split.main + split.islamic) + " new words today: " + split.main + " general, " + split.islamic + " Islamic";
   var cta;
   if (work) cta = '<a class="btn primary" href="#study/cards">' + (due ? "Start studying" : fresh ? "Learn new words" : "Finish today's words") + '</a><a class="btn" href="#study/quiz">Quiz</a>';
   else {

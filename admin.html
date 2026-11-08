@@ -291,7 +291,7 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
 "use strict";
 var CFG = window.ARVOCAB_CONFIG || {};
 var LV = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
-var TY = {n:"noun", v:"verb", a:"adjective", d:"adverb", p:"phrase", r:"particle"};
+var TY = {n:"noun", v:"verb", a:"adjective", d:"adverb", p:"phrase", e:"expression", r:"particle"};
 var $ = function(s){ return document.querySelector(s); };
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(ch){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]; }); }
 function lsGet(k){ try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
@@ -527,7 +527,7 @@ function normAr(s){
   return String(s || "").replace(/ /g, " ").replace(/\\/g, "/").replace(/\s*[xX*×]\s*/g, " × ").replace(/ـ+/g, "ـ")
     .replace(/\s+/g, " ").replace(/^[\s\-_.…]+|[\s\-_.…]+$/g, "").trim();
 }
-var TYPE_AR = {"فعل":"v", "اسم":"n", "اسماء":"n", "صفة":"a", "ظرف":"d", "حرف":"r", "تعبير":"p", "تبير":"p", "تركيب":"p", "سؤال":"p", "تعبير ديني":"p", "تعريف":"p"};
+var TYPE_AR = {"فعل":"v", "اسم":"n", "اسماء":"n", "صفة":"a", "ظرف":"d", "حرف":"r", "تعبير":"e", "تبير":"e", "تركيب":"p", "سؤال":"e", "تعبير ديني":"e", "تعريف":"p"};
 var SURL_RE = /^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[\w-]+\/exec$/;
 var DRAFT_KEY = "arvocab-admin-drafts";
 var review = null; // {news:[], gone:[], back:[], cards:[]}
@@ -797,7 +797,7 @@ document.addEventListener("click", function(e){
 
 /* ---------- lessons (the Learn tab; table "lessons", 015_lessons.sql) ---------- */
 var LVL = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
-var TYPES = [["n", "noun"], ["v", "verb"], ["a", "adjective"], ["d", "adverb"], ["p", "phrase"], ["r", "particle"]];
+var TYPES = [["n", "noun"], ["v", "verb"], ["a", "adjective"], ["d", "adverb"], ["p", "phrase"], ["e", "expression"], ["r", "particle"]];
 var lessonRows = [], ed = null;   // every lesson; the one being edited
 // The words of a story, each once, as written (punctuation dropped), and a vowel-free key for matching.
 function storyWords(lines){
