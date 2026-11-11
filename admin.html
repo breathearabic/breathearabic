@@ -202,7 +202,7 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
 
     <section class="box" aria-labelledby="deckTitle">
       <h2 id="deckTitle">Publish deck</h2>
-      <p>Reads the "Arabic Vocab" tab of your Google Sheet and finds words that aren't in the app yet. New words need an English meaning, a level and a type before they can be published. Words already in the app are never overwritten from the sheet.</p>
+      <p>Reads the "Arabic Vocab" tab of your Google Sheet and finds words that aren't in the app yet. New words need an English meaning, a level and a type before they're published. Publish sends the words that are ready; the rest stay here as drafts on this browser until you finish them. Words already in the app are never overwritten from the sheet.</p>
       <label for="sheetUrl" style="font-size:.88rem;color:var(--muted)">Your sheet's Apps Script link (the same /exec link the old app used)</label>
       <div class="row-actions" style="margin-top:4px">
         <input type="url" id="sheetUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" spellcheck="false" style="flex:1;min-width:240px">
@@ -646,23 +646,31 @@ function renderReview(){
     html += '<h2 style="margin-top:16px">In the app but no longer in your sheet</h2><p class="msg">Tick any you want to retire. Retired words disappear for new study, but members keep their history.</p>' +
       r.gone.map(function(c){ return '<div class="word"><label class="choice"><input type="checkbox" data-retire="' + esc(c.id) + '"' + (c._retire ? " checked" : "") + '> <span class="ar" lang="ar">' + esc(c.arabic) + '</span> <small>' + esc(c.english) + ' · ' + LV[c.level] + ' · card ' + esc(c.id) + '</small></label></div>'; }).join("");
   }
-  var ready = r.news.every(complete);
-  html += '<div class="row-actions"><button class="btn primary" id="publishBtn" type="button"' + (ready ? "" : " disabled") + '>Publish</button>' +
-    (ready ? "" : '<span class="msg">Fill in the highlighted boxes, or choose Skip, to publish.</span>') + '</div><p class="msg" id="publishMsg" aria-live="polite"></p>';
+  html += '<div class="row-actions"><button class="btn primary" id="publishBtn" type="button"></button><span class="msg" id="publishNote"></span></div><p class="msg" id="publishMsg" aria-live="polite"></p>';
   el.innerHTML = html;
+  updatePublishBtn();
+}
+// Publish sends whatever is ready (finished words, skips, edits, retired and returning words). Words still missing
+// details stay as drafts on this browser, so a long list can be published a bit at a time.
+function updatePublishBtn(){
+  var r = review, btn = $("#publishBtn"); if (!btn) return;
+  var ready = r.news.filter(complete).length, waiting = r.news.length - ready, other = r.back.length + r.gone.filter(function(c){ return c._retire; }).length;
+  btn.disabled = !ready && !other;
+  btn.textContent = ready && waiting ? "Publish " + ready + " ready word" + (ready === 1 ? "" : "s") : "Publish";
+  $("#publishNote").textContent = waiting ? waiting + " word" + (waiting === 1 ? "" : "s") + " still need" + (waiting === 1 ? "s" : "") + " details and will stay here as " + (waiting === 1 ? "a draft" : "drafts") + "." : "";
 }
 $("#deckReview").addEventListener("input", function(e){
   var w = e.target.closest(".word[data-i]");
   if (w && e.target.dataset.f) {
     var n = review.news[+w.dataset.i]; n[e.target.dataset.f] = e.target.value; saveDrafts();
     if (e.target.tagName === "SELECT") renderReview();
-    else { e.target.classList.toggle("missing", n.action === "add" && !e.target.value.trim() && e.target.dataset.f === "en"); var btn = $("#publishBtn"); if (btn) btn.disabled = !review.news.every(complete); }
+    else { e.target.classList.toggle("missing", n.action === "add" && !e.target.value.trim() && e.target.dataset.f === "en"); updatePublishBtn(); }
   }
 });
 $("#deckReview").addEventListener("change", function(e){
   var w = e.target.closest(".word[data-i]");
   if (w && e.target.type === "radio") { review.news[+w.dataset.i].action = e.target.value; saveDrafts(); renderReview(); }
-  if (e.target.dataset.retire) { var c = review.gone.filter(function(x){ return x.id === e.target.dataset.retire; })[0]; if (c) c._retire = e.target.checked; }
+  if (e.target.dataset.retire) { var c = review.gone.filter(function(x){ return x.id === e.target.dataset.retire; })[0]; if (c) c._retire = e.target.checked; updatePublishBtn(); }
 });
 $("#deckReview").addEventListener("click", function(e){ if (e.target.id === "publishBtn") publish(); });
 function publish(){
@@ -673,6 +681,7 @@ function publish(){
   var now = new Date().toISOString();
   var adds = [], updates = [], skips = [];
   r.news.forEach(function(n){
+    if (!complete(n)) return;   // not finished: stays as a draft
     if (n.action === "skip") skips.push({arabic:n.key, note:"row " + n.row + ": skipped on " + now.slice(0, 10)});
     else if (n.action === "replace") updates.push({id:n.replaces.id, arabic:n.ar, updated_at:now});
     else {
@@ -693,14 +702,19 @@ function publish(){
   if (retire.length) jobs.push(check(sb.from("cards").update({is_active:false, updated_at:now}).in("id", retire)));
   if (revive.length) jobs.push(check(sb.from("cards").update({is_active:true, updated_at:now}).in("id", revive)));
   Promise.all(jobs).then(function(){
-    lsSet(DRAFT_KEY, {});
+    // Keep the drafts of words that weren't ready; the published ones are in the app now.
+    var drafts = lsGet(DRAFT_KEY) || {};
+    r.news.forEach(function(n){ if (complete(n)) delete drafts[n.key]; });
+    lsSet(DRAFT_KEY, drafts);
+    var waiting = r.news.filter(function(n){ return !complete(n); }).length;
     var parts = [];
     if (adds.length) parts.push(adds.length + " new word" + (adds.length === 1 ? "" : "s") + " added");
     if (updates.length) parts.push(updates.length + " updated");
     if (skips.length) parts.push(skips.length + " skipped");
     if (retire.length) parts.push(retire.length + " retired");
     if (revive.length) parts.push(revive.length + " switched back on");
-    $("#deckReview").innerHTML = '<p class="msg ok">Published: ' + esc(parts.join(", ") || "nothing changed") + '. Members see the changes next time they open the app.</p>';
+    $("#deckReview").innerHTML = '<p class="msg ok">Published: ' + esc(parts.join(", ") || "nothing changed") + '. Members see the changes next time they open the app.' +
+      (waiting ? ' ' + waiting + ' unfinished word' + (waiting === 1 ? " is" : "s are") + ' saved as drafts: check the sheet again to carry on with ' + (waiting === 1 ? "it" : "them") + '.' : "") + '</p>';
   }).catch(function(err){ setMsg(msg, "Publishing failed: " + err.message + ". Nothing you typed is lost; try again.", "bad"); btn.disabled = false; });
 }
 
