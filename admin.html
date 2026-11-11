@@ -133,6 +133,35 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
   <div id="gate" class="center"><p>Loading…</p></div>
 
   <div id="admin" hidden>
+    <section class="box" aria-labelledby="deckTitle">
+      <h2 id="deckTitle">Publish deck</h2>
+      <p>Reads the "Arabic Vocab" tab of your Google Sheet and finds words that aren't in the app yet. New words need an English meaning, a level and a type before they're published. Publish sends the words that are ready; the rest stay here as drafts on this browser until you finish them. Words already in the app are never overwritten from the sheet.</p>
+      <label for="sheetUrl" style="font-size:.88rem;color:var(--muted)">Your sheet's Apps Script link (the same /exec link the old app used)</label>
+      <div class="row-actions" style="margin-top:4px">
+        <input type="url" id="sheetUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" spellcheck="false" style="flex:1;min-width:240px">
+        <button class="btn primary" id="checkSheet" type="button">Check sheet for new words</button>
+      </div>
+      <p class="msg" id="deckMsg" aria-live="polite"></p>
+      <div id="deckReview"></div>
+    </section>
+
+    <section class="box" aria-labelledby="cardsTitle">
+      <h2 id="cardsTitle">Flashcards</h2>
+      <p>Find any card in either deck and fix it: the Arabic, the meaning, the level, the type, the category and the example sentences. Changes reach learners the next time they open the app.</p>
+      <div class="row-actions" style="margin-top:0">
+        <input type="search" id="cardSearch" placeholder="Search Arabic or English" aria-label="Search cards" style="flex:1;min-width:200px">
+        <select id="cardSort" aria-label="Sort"><option value="">Deck order</option><option value="new">Newest first</option><option value="edited">Recently edited</option></select>
+        <select id="cardDeck" aria-label="Deck"><option value="">Both decks</option><option value="main">General Vocabulary</option><option value="islamic">Islamic terms</option></select>
+        <label style="display:flex;gap:6px;align-items:center;font-size:.85rem;color:var(--muted)"><input type="checkbox" id="cardRetired"> Include retired</label>
+      </div>
+      <p class="msg" id="cardMsg" aria-live="polite"></p>
+      <div class="tablewrap" id="cardListWrap"><table>
+        <thead><tr><th>Arabic</th><th>Meaning</th><th>Level</th><th>Deck</th><th></th></tr></thead>
+        <tbody id="cardList"></tbody>
+      </table></div>
+      <div id="cardForm" class="lform" hidden></div>
+    </section>
+
     <section class="box" aria-labelledby="statsTitle">
       <h2 id="statsTitle">Members</h2>
       <div class="stats" id="stats"></div>
@@ -198,34 +227,6 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
         <thead><tr><th>Email</th><th>Length</th><th>Note</th><th>Created</th><th></th></tr></thead>
         <tbody id="pending"></tbody>
       </table></div>
-    </section>
-
-    <section class="box" aria-labelledby="deckTitle">
-      <h2 id="deckTitle">Publish deck</h2>
-      <p>Reads the "Arabic Vocab" tab of your Google Sheet and finds words that aren't in the app yet. New words need an English meaning, a level and a type before they're published. Publish sends the words that are ready; the rest stay here as drafts on this browser until you finish them. Words already in the app are never overwritten from the sheet.</p>
-      <label for="sheetUrl" style="font-size:.88rem;color:var(--muted)">Your sheet's Apps Script link (the same /exec link the old app used)</label>
-      <div class="row-actions" style="margin-top:4px">
-        <input type="url" id="sheetUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" spellcheck="false" style="flex:1;min-width:240px">
-        <button class="btn primary" id="checkSheet" type="button">Check sheet for new words</button>
-      </div>
-      <p class="msg" id="deckMsg" aria-live="polite"></p>
-      <div id="deckReview"></div>
-    </section>
-
-    <section class="box" aria-labelledby="cardsTitle">
-      <h2 id="cardsTitle">Flashcards</h2>
-      <p>Find any card in either deck and fix it: the Arabic, the meaning, the level, the type, the category and the example sentences. Changes reach learners the next time they open the app.</p>
-      <div class="row-actions" style="margin-top:0">
-        <input type="search" id="cardSearch" placeholder="Search Arabic or English" aria-label="Search cards" style="flex:1;min-width:200px">
-        <select id="cardDeck" aria-label="Deck"><option value="">Both decks</option><option value="main">General Vocabulary</option><option value="islamic">Islamic terms</option></select>
-        <label style="display:flex;gap:6px;align-items:center;font-size:.85rem;color:var(--muted)"><input type="checkbox" id="cardRetired"> Include retired</label>
-      </div>
-      <p class="msg" id="cardMsg" aria-live="polite"></p>
-      <div class="tablewrap" id="cardListWrap"><table>
-        <thead><tr><th>Arabic</th><th>Meaning</th><th>Level</th><th>Deck</th><th></th></tr></thead>
-        <tbody id="cardList"></tbody>
-      </table></div>
-      <div id="cardForm" class="lform" hidden></div>
     </section>
 
     <section class="box" aria-labelledby="lessonsTitle">
@@ -531,6 +532,43 @@ var TYPE_AR = {"فعل":"v", "اسم":"n", "اسماء":"n", "صفة":"a", "ظر
 var SURL_RE = /^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[\w-]+\/exec$/;
 var DRAFT_KEY = "arvocab-admin-drafts";
 var review = null; // {news:[], gone:[], back:[], cards:[]}
+/* Drafts (words from the sheet not finished yet) live in the deck_drafts table (032_deck_drafts.sql), so every
+   editor sees the same ones. This browser keeps a copy too. Drafts typed before that table existed were only
+   in one browser: the first time each browser opens this page they're sent up, and for any word saved in both
+   places the fuller draft wins, so nobody's finished work is replaced by an emptier copy. */
+var draftsShared = false, draftTimers = {};
+function draftFill(d){
+  if (!d) return 0;
+  return ["en", "lv", "ty", "exAr", "exEn"].filter(function(f){ return d[f] != null && String(d[f]).trim(); }).length + (d.action && d.action !== "add" ? 1 : 0);
+}
+function mergeDrafts(rows){
+  var local = lsGet(DRAFT_KEY) || {}, merged = {}, up = [];
+  if (!rows) return local;                        // no shared table yet: this browser only
+  rows.forEach(function(r){ merged[r.arabic] = r.data; });
+  if (!lsGet(DRAFT_KEY + "-sent")) {
+    Object.keys(local).forEach(function(k){
+      if (draftFill(local[k]) > draftFill(merged[k])) { merged[k] = local[k]; up.push(k); }
+    });
+  }
+  // Only marked as sent once every one has reached the database; until then they're offered again next time.
+  var left = up.length, ok = true;
+  up.forEach(function(k){ pushDraft(k, merged[k], function(good){ ok = ok && good; if (!--left && ok) lsSet(DRAFT_KEY + "-sent", true); }); });
+  if (!up.length) lsSet(DRAFT_KEY + "-sent", true);
+  lsSet(DRAFT_KEY, Object.assign({}, local, merged));
+  return merged;
+}
+function pushDraft(key, data, done){
+  clearTimeout(draftTimers[key]);
+  draftTimers[key] = setTimeout(function(){
+    delete draftTimers[key];
+    sb.from("deck_drafts").upsert({arabic:key, data:data, updated_by:me.id, updated_at:new Date().toISOString()}).then(function(r){
+      if (done) done(!r.error);
+      var el = $("#draftStatus"); if (!el) return;
+      if (r.error) setMsg(el, "Couldn't save drafts to the app (" + r.error.message + "). They're kept on this browser; try again later.", "bad");
+      else setMsg(el, "Drafts saved for every editor.", "ok");
+    });
+  }, 700);
+}
 function initDeck(){
   check(sb.from("app_settings").select("value").eq("key", "sheet_deck_url").maybeSingle()).then(function(r){
     $("#sheetUrl").value = (r.data && r.data.value) || lsGet("arvocab-sync-url") || "";
@@ -544,14 +582,16 @@ $("#checkSheet").addEventListener("click", function(){
   Promise.all([
     fetch(url + "?action=deck", {cache:"no-store"}).then(function(r){ return r.json(); }),
     fetchAll("cards", "id,deck,level,word_type,arabic,english,examples,sort_order,is_free,is_active", "sort_order"),
-    fetchAll("deck_skips", "arabic,note", "arabic")
+    fetchAll("deck_skips", "arabic,note", "arabic"),
+    sb.from("deck_drafts").select("arabic,data").then(function(r){ return r.error ? null : r.data; }, function(){ return null; })
   ]).then(function(res){
     var sheet = res[0];
     if (!sheet || !sheet.ok || !sheet.rows) {
       return setMsg(msg, sheet && sheet.error === "no-deck-tab" ? "The sheet has no tab called \"Arabic Vocab\"." : "The script answered, but not with the word list. Update the Apps Script to the latest google-sheet-sync.txt and deploy a new version (SETUP.md, step 7).", "bad");
     }
     // Learners' saved words (ids "u-…") are theirs, not part of the deck.
-    buildReview(sheet, res[1].filter(function(c){ return !/^u-/.test(c.id); }), res[2]);
+    draftsShared = !!res[3];
+    buildReview(sheet, res[1].filter(function(c){ return !/^u-/.test(c.id); }), res[2], mergeDrafts(res[3]));
     setMsg(msg, "");
     renderReview();
   }).catch(function(err){ setMsg(msg, "Couldn't read the sheet: " + err.message + ". Check the link and that you're online.", "bad"); });
@@ -561,7 +601,7 @@ function col(header, names, fallback){
   for (var i = 0; i < names.length; i++) { var k = h.indexOf(names[i]); if (k > -1) return k; }
   return fallback;
 }
-function buildReview(sheet, cards, skips){
+function buildReview(sheet, cards, skips, drafts){
   cards = cards.filter(function(c){ return (c.deck || "main") === "main"; });   // the Islamic deck is not in the sheet
   var header = sheet.header || [];
   var iType = col(header, ["type"], 1), iTerm = col(header, ["term", "word", "arabic"], 2), iSent = col(header, ["used in a sentence", "sentence", "example"], 3), iTr = col(header, ["translation", "english"], 4);
@@ -569,7 +609,7 @@ function buildReview(sheet, cards, skips){
   var byAr = new Map(), byId = new Map(cards.map(function(c){ return [c.id, c]; }));
   cards.forEach(function(c){ byAr.set(normAr(c.arabic), c); });
   var skipSet = new Set(skips.map(function(s){ return s.arabic; }));
-  var inSheet = new Set(), drafts = lsGet(DRAFT_KEY) || {};
+  var inSheet = new Set();
   var news = [], back = [];
   // An opposite pair in one sheet cell ("منع × منح") becomes two cards: rN for the first word, rNb for the second.
   var parts = function(r){ return String(r[iTerm] || "").split("×").map(function(x){ return x.trim(); }).filter(Boolean); };
@@ -606,10 +646,13 @@ function buildReview(sheet, cards, skips){
   news.forEach(function(n){ if (n.replaces && !(drafts[n.key] && drafts[n.key].action)) n.action = "replace"; });
   review = {news:news, gone:gone, back:back, cards:cards};
 }
-function saveDrafts(){
-  var d = {};
-  review.news.forEach(function(n){ d[n.key] = {en:n.en, lv:n.lv, ty:n.ty, exAr:n.exAr, exEn:n.exEn, action:n.action}; });
+function draftOf(n){ return {en:n.en, lv:n.lv, ty:n.ty, exAr:n.exAr, exEn:n.exEn, action:n.action}; }
+// Saves the word just changed (n) to the shared drafts, and every draft to this browser.
+function saveDrafts(n){
+  var d = lsGet(DRAFT_KEY) || {};
+  review.news.forEach(function(x){ d[x.key] = draftOf(x); });
   lsSet(DRAFT_KEY, d);
+  if (n && draftsShared) pushDraft(n.key, draftOf(n));
 }
 function complete(n){ return n.action === "skip" || n.action === "replace" || (n.en.trim() && n.lv && n.ty); }
 function renderReview(){
@@ -646,7 +689,8 @@ function renderReview(){
     html += '<h2 style="margin-top:16px">In the app but no longer in your sheet</h2><p class="msg">Tick any you want to retire. Retired words disappear for new study, but members keep their history.</p>' +
       r.gone.map(function(c){ return '<div class="word"><label class="choice"><input type="checkbox" data-retire="' + esc(c.id) + '"' + (c._retire ? " checked" : "") + '> <span class="ar" lang="ar">' + esc(c.arabic) + '</span> <small>' + esc(c.english) + ' · ' + LV[c.level] + ' · card ' + esc(c.id) + '</small></label></div>'; }).join("");
   }
-  html += '<div class="row-actions"><button class="btn primary" id="publishBtn" type="button"></button><span class="msg" id="publishNote"></span></div><p class="msg" id="publishMsg" aria-live="polite"></p>';
+  html += '<div class="row-actions"><button class="btn primary" id="publishBtn" type="button"></button><span class="msg" id="publishNote"></span></div><p class="msg" id="publishMsg" aria-live="polite"></p>' +
+    '<p class="msg' + (draftsShared ? "" : " bad") + '" id="draftStatus">' + (draftsShared ? "Unfinished words are saved for every editor as you type." : "Unfinished words are only saved on this browser. Run 032_deck_drafts.sql in Supabase to share them with every editor.") + '</p>';
   el.innerHTML = html;
   updatePublishBtn();
 }
@@ -662,14 +706,14 @@ function updatePublishBtn(){
 $("#deckReview").addEventListener("input", function(e){
   var w = e.target.closest(".word[data-i]");
   if (w && e.target.dataset.f) {
-    var n = review.news[+w.dataset.i]; n[e.target.dataset.f] = e.target.value; saveDrafts();
+    var n = review.news[+w.dataset.i]; n[e.target.dataset.f] = e.target.value; saveDrafts(n);
     if (e.target.tagName === "SELECT") renderReview();
     else { e.target.classList.toggle("missing", n.action === "add" && !e.target.value.trim() && e.target.dataset.f === "en"); updatePublishBtn(); }
   }
 });
 $("#deckReview").addEventListener("change", function(e){
   var w = e.target.closest(".word[data-i]");
-  if (w && e.target.type === "radio") { review.news[+w.dataset.i].action = e.target.value; saveDrafts(); renderReview(); }
+  if (w && e.target.type === "radio") { var nr = review.news[+w.dataset.i]; nr.action = e.target.value; saveDrafts(nr); renderReview(); }
   if (e.target.dataset.retire) { var c = review.gone.filter(function(x){ return x.id === e.target.dataset.retire; })[0]; if (c) c._retire = e.target.checked; updatePublishBtn(); }
 });
 $("#deckReview").addEventListener("click", function(e){ if (e.target.id === "publishBtn") publish(); });
@@ -679,7 +723,7 @@ function publish(){
   var ids = new Set(r.cards.map(function(c){ return c.id; }));
   var maxSort = r.cards.reduce(function(m, c){ return Math.max(m, c.sort_order); }, 0);
   var now = new Date().toISOString();
-  var adds = [], updates = [], skips = [];
+  var adds = [], updates = [], skips = [], addKeys = {};
   r.news.forEach(function(n){
     if (!complete(n)) return;   // not finished: stays as a draft
     if (n.action === "skip") skips.push({arabic:n.key, note:"row " + n.row + ": skipped on " + now.slice(0, 10)});
@@ -689,24 +733,30 @@ function publish(){
       while (ids.has(id)) id = (n.id || "r" + n.row) + "-" + (++k);
       ids.add(id);
       maxSort += 10;
+      addKeys[id] = n;
       adds.push({id:id, level:+n.lv, word_type:n.ty, arabic:n.ar, english:n.en.trim(), examples:n.exAr.trim() ? [[n.exAr.trim(), n.exEn.trim()]] : [],
         sort_order:maxSort, is_free:+n.lv <= 2, is_active:true, updated_at:now});
     }
   });
   var retire = r.gone.filter(function(c){ return c._retire; }).map(function(c){ return c.id; });
   var revive = r.back.map(function(b){ return b.card.id; });
-  var jobs = [];
-  if (adds.length) jobs.push(check(sb.from("cards").insert(adds)));
+  // Each new word is added on its own, so one word the database refuses can't stop the rest.
+  var jobs = [], failed = [];
+  adds.forEach(function(a){
+    jobs.push(sb.from("cards").insert(a).then(function(res){ if (res.error) failed.push({n:addKeys[a.id], why:res.error.message}); }));
+  });
   updates.forEach(function(u){ jobs.push(check(sb.from("cards").update({arabic:u.arabic, updated_at:u.updated_at}).eq("id", u.id))); });
   if (skips.length) jobs.push(check(sb.from("deck_skips").upsert(skips, {onConflict:"arabic"})));
   if (retire.length) jobs.push(check(sb.from("cards").update({is_active:false, updated_at:now}).in("id", retire)));
   if (revive.length) jobs.push(check(sb.from("cards").update({is_active:true, updated_at:now}).in("id", revive)));
   Promise.all(jobs).then(function(){
     // Keep the drafts of words that weren't ready; the published ones are in the app now.
-    var drafts = lsGet(DRAFT_KEY) || {};
-    r.news.forEach(function(n){ if (complete(n)) delete drafts[n.key]; });
+    var drafts = lsGet(DRAFT_KEY) || {}, bad = new Set(failed.map(function(f){ return f.n.key; })), done = [];
+    r.news.forEach(function(n){ if (complete(n) && !bad.has(n.key)) { delete drafts[n.key]; done.push(n.key); } });
     lsSet(DRAFT_KEY, drafts);
+    if (draftsShared && done.length) sb.from("deck_drafts").delete().in("arabic", done).then(function(){});
     var waiting = r.news.filter(function(n){ return !complete(n); }).length;
+    adds = adds.filter(function(a){ return !bad.has(addKeys[a.id].key); });
     var parts = [];
     if (adds.length) parts.push(adds.length + " new word" + (adds.length === 1 ? "" : "s") + " added");
     if (updates.length) parts.push(updates.length + " updated");
@@ -714,7 +764,9 @@ function publish(){
     if (retire.length) parts.push(retire.length + " retired");
     if (revive.length) parts.push(revive.length + " switched back on");
     $("#deckReview").innerHTML = '<p class="msg ok">Published: ' + esc(parts.join(", ") || "nothing changed") + '. Members see the changes next time they open the app.' +
-      (waiting ? ' ' + waiting + ' unfinished word' + (waiting === 1 ? " is" : "s are") + ' saved as drafts: check the sheet again to carry on with ' + (waiting === 1 ? "it" : "them") + '.' : "") + '</p>';
+      (waiting ? ' ' + waiting + ' unfinished word' + (waiting === 1 ? " is" : "s are") + ' saved as drafts: check the sheet again to carry on with ' + (waiting === 1 ? "it" : "them") + '.' : "") + '</p>' +
+      (failed.length ? '<p class="msg bad">' + failed.length + ' word' + (failed.length === 1 ? "" : "s") + ' couldn\'t be added and ' + (failed.length === 1 ? "is" : "are") + ' still saved as ' + (failed.length === 1 ? "a draft" : "drafts") + '. Fix the reason below, then check the sheet again:</p><ul class="msg bad">' +
+        failed.map(function(f){ return '<li><span class="ar" lang="ar">' + esc(f.n.ar) + '</span>: ' + esc(f.why) + '</li>'; }).join("") + '</ul>' : "");
   }).catch(function(err){ setMsg(msg, "Publishing failed: " + err.message + ". Nothing you typed is lost; try again.", "bad"); btn.disabled = false; });
 }
 
@@ -724,7 +776,8 @@ var CARD_TOPICS = [["", "None"], ["aqeedah", "Creed and sects"], ["usul", "Princ
 var allCards = [], cardEd = null;
 function arKey(s){ return String(s || "").replace(/[ً-ٰٟـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه"); }
 function loadCards(){
-  fetchAll("cards", "id,deck,topic,level,word_type,arabic,english,examples,is_free,is_active,owner_id,sort_order", "sort_order").then(function(rows){
+  // Every column, so "Newest first" works once created_at exists (032_deck_drafts.sql) without breaking before.
+  fetchAll("cards", "*", "sort_order").then(function(rows){
     allCards = rows.filter(function(c){ return !c.owner_id; });   // learners' own saved words are theirs to edit
     renderCardList();
     var m = /^#card=([\w-]+)$/.exec(location.hash), c = m && allCards.filter(function(x){ return x.id === m[1]; })[0];
@@ -732,20 +785,25 @@ function loadCards(){
   }).catch(function(e){ setMsg($("#cardMsg"), "Couldn't load cards: " + e.message, "bad"); });
 }
 function renderCardList(){
-  var q = $("#cardSearch").value.trim(), qa = arKey(q), ql = q.toLowerCase(), deck = $("#cardDeck").value, retired = $("#cardRetired").checked;
+  var q = $("#cardSearch").value.trim(), qa = arKey(q), ql = q.toLowerCase(), deck = $("#cardDeck").value, retired = $("#cardRetired").checked, sort = $("#cardSort").value;
   var list = allCards.filter(function(c){
     return (!deck || c.deck === deck) && (retired || c.is_active) &&
       (!q || arKey(c.arabic).indexOf(qa) > -1 || String(c.english).toLowerCase().indexOf(ql) > -1);
   });
-  $("#cardList").innerHTML = (q || deck ? list.slice(0, 60) : list.slice(0, 20)).map(function(c){
+  // Newest first: when the card was added (cards from before 032 all share one date, so they fall back to deck
+  // order, newest last added first). Recently edited: the last change from here, the sheet or SQL.
+  var t = function(v){ return v ? Date.parse(v) : 0; };
+  if (sort === "new") list = list.slice().sort(function(a, b){ return (t(b.created_at) - t(a.created_at)) || (b.sort_order - a.sort_order); });
+  if (sort === "edited") list = list.slice().sort(function(a, b){ return t(b.updated_at) - t(a.updated_at); });
+  $("#cardList").innerHTML = (q || deck || sort ? list.slice(0, 60) : list.slice(0, 20)).map(function(c){
     return '<tr' + (c.is_active ? "" : ' style="opacity:.55"') + '><td class="ar" style="font-size:1.15rem">' + esc(c.arabic) + '</td><td>' + esc(c.english) + (c.is_active ? "" : ' <span class="tag">retired</span>') + '</td>' +
       '<td>' + LVL[c.level] + '</td><td>' + (c.deck === "islamic" ? "Islamic" : "General") + '</td>' +
       '<td><button class="btn small" type="button" data-edit-card="' + c.id + '">Edit</button></td></tr>';
   }).join("") || '<tr><td colspan="5">No cards match.</td></tr>';
-  setMsg($("#cardMsg"), list.length > 60 ? "Showing 60 of " + list.length + ". Search to narrow it down." : !q && !deck ? "Search for a card, or pick a deck." : "");
+  setMsg($("#cardMsg"), list.length > 60 && (q || deck || sort) ? "Showing 60 of " + list.length + ". Search to narrow it down." : !q && !deck && !sort ? "Search for a card, pick a deck, or sort by newest." : "");
 }
 ["input", "change"].forEach(function(ev){
-  $("#cardSearch").addEventListener(ev, renderCardList); $("#cardDeck").addEventListener(ev, renderCardList); $("#cardRetired").addEventListener(ev, renderCardList);
+  $("#cardSearch").addEventListener(ev, renderCardList); $("#cardDeck").addEventListener(ev, renderCardList); $("#cardRetired").addEventListener(ev, renderCardList); $("#cardSort").addEventListener(ev, renderCardList);
 });
 function openCard(c){
   cardEd = JSON.parse(JSON.stringify(c));
