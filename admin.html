@@ -690,10 +690,9 @@ function aiFill(again){
     aiSay("Writing missing meanings and examples with AI… " + done + " of " + todo.length + " words done.");
     // Gives up after 2 minutes, so a stuck request can't leave the button waiting forever.
     var timeout = new Promise(function(_, no){ setTimeout(function(){ no(new Error("the AI took too long")); }, 120000); });
-    Promise.race([sb.functions.invoke("fill-words", {body:{words:batch.map(function(n){ return {key:n.key, ar:n.ar, en:n.en, ty:n.ty, lv:n.lv, exAr:n.exAr, exEn:n.exEn}; })}}), timeout]).then(function(r){
+    Promise.race([sb.functions.invoke("fill-words", {body:{words:batch.map(function(n){ return {key:n.key, ar:n.ar, en:n.en, ty:n.ty, lv:n.lv, exAr:n.exAr, exEn:n.exEn}; })}}).then(functionError), timeout]).then(function(r){
       var d = r.data || {};
-      if (r.error && !d.error) console.warn("fill-words failed", r.error);
-      if (r.error || d.error) throw new Error(d.error || (r.error && /404|not found/i.test(String(r.error.message || r.error.context && r.error.context.status)) ? "the fill-words function isn't deployed in Supabase yet" : "the fill-words function didn't answer; check it's deployed in Supabase"));
+      if (r.error || d.error) throw new Error(d.error || r.why);
       var got = {}; (d.words || []).forEach(function(w){ got[w.key] = w; });
       batch.forEach(function(n){
         var g = got[n.key]; n.aiTried = true;
@@ -709,6 +708,18 @@ function aiFill(again){
     }).catch(function(err){ failed = err.message; done = todo.length; step(); });
   };
   step();
+}
+/* When a function answers with an error, supabase-js leaves its explanation inside error.context (the response),
+   so read it from there: e.g. "GEMINI_API_KEY secret is not set" or a 404 when the function isn't there. */
+function functionError(r){
+  if (!r.error) return r;
+  var res = r.error.context, status = res && res.status;
+  var base = status === 404 ? "Supabase says there's no function called fill-words (404). Check its name is exactly fill-words"
+    : status === 401 ? "Supabase refused the request (401). Sign out and in again, or check the function's Verify JWT setting"
+    : status ? "the fill-words function failed (" + status + ")" : "couldn't reach the fill-words function (" + (r.error.message || "network error") + ")";
+  if (!res || typeof res.clone !== "function") return Object.assign({}, r, {why:base});
+  return res.clone().json().then(function(b){ return Object.assign({}, r, {why:b && (b.error || b.message || b.msg) ? base + ": " + (b.error || b.message || b.msg) : base}); },
+    function(){ return Object.assign({}, r, {why:base}); });
 }
 // Puts AI text into a word's boxes without redrawing the list, so whatever is being typed isn't interrupted.
 function showFilled(n){
