@@ -162,6 +162,10 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
         <tbody id="cardList"></tbody>
       </table></div>
       <div id="cardForm" class="lform" hidden></div>
+      <h3>Missing meanings and examples</h3>
+      <p class="msg" style="margin-top:-6px">Finds deck cards with no meaning, no example sentence, or an example without its English, and has AI write what's missing. Nothing is saved until you've checked them and pressed Save.</p>
+      <div class="row-actions" style="margin-top:0"><button class="btn small" id="gapFind" type="button">Find cards with missing details</button><span class="msg" id="gapMsg" aria-live="polite"></span></div>
+      <div id="gapList"></div>
     </section>
 
     <section class="box" aria-labelledby="statsTitle">
@@ -691,7 +695,7 @@ function aiFill(again){
     }
     aiSay("Writing missing meanings and examples with AI… " + done + " of " + todo.length + " words done.");
     // Gives up after 2 minutes, so a stuck request can't leave the button waiting forever.
-    var timeout = new Promise(function(_, no){ setTimeout(function(){ no(new Error("the AI took too long")); }, 140000); });
+    var timeout = new Promise(function(_, no){ setTimeout(function(){ no(new Error("the AI took too long")); }, 150000); });
     Promise.race([sb.functions.invoke("fill-words", {body:{words:batch.map(function(n){ return {key:n.key, ar:n.ar, en:n.en, ty:n.ty, lv:n.lv, exAr:n.exAr, exEn:n.exEn}; })}}).then(functionError), timeout]).then(function(r){
       var d = r.data || {};
       if (r.error || d.error) { var e = new Error(d.error || r.why); e.busy = r.busy || d.busy; throw e; }
@@ -708,12 +712,14 @@ function aiFill(again){
       });
       done += batch.length; retries = 0; step();
     }).catch(function(err){
-      if ((err.busy || /took too long/.test(err.message)) && retries < 4) {
+      if ((err.busy || /took too long/.test(err.message)) && retries < 2) {
         retries++;
-        aiSay("Google's AI is busy right now. Trying again in 20 seconds (try " + retries + " of 4)… " + done + " of " + todo.length + " words done.");
-        return setTimeout(step, 20000);
+        aiSay("Google's AI is busy right now. Trying again in 15 seconds (try " + retries + " of 2)… " + done + " of " + todo.length + " words done.");
+        return setTimeout(step, 15000);
       }
-      failed = err.message; left += batch.length; done += batch.length; retries = 0; step();
+      // Still busy after the retries: Google is overloaded, so stop here rather than wait on every batch.
+      var stopAll = err.busy || /took too long/.test(err.message), skip = stopAll ? todo.length - done : batch.length;
+      failed = err.message + (stopAll ? ". Google's AI seems overloaded; try again later" : ""); left += skip; done += skip; retries = 0; step();
     });
   };
   step();
@@ -959,6 +965,92 @@ document.addEventListener("click", function(e){
   var b = e.target.closest("[data-edit-card]");
   if (b) { var c = allCards.filter(function(x){ return x.id === b.dataset.editCard; })[0]; if (c) openCard(c); }
 });
+
+/* ---------- cards already published with a missing meaning or example: a one-off AI fill, checked before saving ---------- */
+var gap = null;   // {cards:[], got:{id:{en,exAr,exEn}}, busy}
+function gapNeeds(c){
+  var ex = c.examples || [];
+  return !c.owner_id && c.is_active && (!String(c.english || "").trim() || !ex.length || !String(ex[0][0] || "").trim() || !String(ex[0][1] || "").trim());
+}
+$("#gapFind").addEventListener("click", function(){
+  if (gap && gap.busy) return;
+  if (!allCards.length) return setMsg($("#gapMsg"), "The cards are still loading. Try again in a moment.");
+  var list = allCards.filter(gapNeeds);
+  gap = {cards:list, got:{}, busy:false};
+  if (!list.length) { $("#gapList").innerHTML = ""; return setMsg($("#gapMsg"), "Every card has a meaning and an example with its English.", "ok"); }
+  setMsg($("#gapMsg"), list.length + " card" + (list.length === 1 ? "" : "s") + " missing something.");
+  $("#gapList").innerHTML = '<div class="row-actions" style="margin-top:0"><button class="btn primary small" id="gapFill" type="button">Fill ' + list.length + ' with AI</button></div>';
+});
+document.addEventListener("click", function(e){
+  if (e.target.id === "gapFill") gapFill();
+  if (e.target.id === "gapSave") gapSave();
+});
+function gapFill(){
+  if (!gap || gap.busy) return;
+  gap.busy = true;
+  var todo = gap.cards, done = 0, retries = 0, failed = "";
+  var step = function(){
+    var batch = todo.slice(done, done + 5);
+    if (!batch.length) {
+      gap.busy = false;
+      var n = Object.keys(gap.got).length;
+      setMsg($("#gapMsg"), (failed ? "Stopped early: " + failed + ". " : "") + n + " card" + (n === 1 ? "" : "s") + " filled in. Check each one, then press Save.", failed ? "bad" : "ok");
+      return gapRender();
+    }
+    setMsg($("#gapMsg"), "Writing with AI… " + done + " of " + todo.length + " cards done.");
+    var timeout = new Promise(function(_, no){ setTimeout(function(){ no(new Error("the AI took too long")); }, 150000); });
+    Promise.race([sb.functions.invoke("fill-words", {body:{words:batch.map(function(c){
+      var ex = (c.examples || [])[0] || [];
+      return {key:c.id, ar:c.arabic, en:c.english || "", ty:c.word_type, lv:String(c.level || ""), exAr:ex[0] || "", exEn:ex[1] || ""};
+    })}}).then(functionError), timeout]).then(function(r){
+      var d = r.data || {};
+      if (r.error || d.error) { var er = new Error(d.error || r.why); er.busy = r.busy || d.busy; throw er; }
+      (d.words || []).forEach(function(w){ gap.got[w.key] = w; });
+      done += batch.length; retries = 0; step();
+    }).catch(function(err){
+      var busy = err.busy || /took too long/.test(err.message);
+      if (busy && retries < 2) { retries++; setMsg($("#gapMsg"), "Google's AI is busy. Trying again in 15 seconds (try " + retries + " of 2)… " + done + " of " + todo.length + " cards done."); return setTimeout(step, 15000); }
+      failed = err.message; done = busy ? todo.length : done + batch.length; retries = 0; step();
+    });
+  };
+  $("#gapList").innerHTML = "";
+  step();
+}
+// Each card with the AI's suggestion in editable boxes (marked "AI: check"), ticked to be saved.
+function gapRender(){
+  var rows = gap.cards.filter(function(c){ return gap.got[c.id]; });
+  if (!rows.length) { $("#gapList").innerHTML = ""; return; }
+  $("#gapList").innerHTML = rows.map(function(c){
+    var g = gap.got[c.id], ex = (c.examples || [])[0] || [];
+    var v = {en:c.english || g.en || "", exAr:ex[0] || g.exAr || "", exEn:ex[1] || g.exEn || ""};
+    var tag = function(f){ return g[f] ? ' <span class="ai-tag">AI: check</span>' : ""; }, cls = function(f){ return g[f] ? "ai" : ""; };
+    return '<div class="word" data-gap="' + esc(c.id) + '"><div class="word-head"><label class="choice"><input type="checkbox" data-gap-save checked> <span class="ar" lang="ar">' + esc(c.arabic) + '</span></label><small>' + LVL[c.level] + ' · ' + (c.deck === "islamic" ? "Islamic" : "General") + ' · card ' + esc(c.id) + '</small></div>' +
+      '<div class="word-grid"><label>English meaning' + tag("en") + '<input type="text" data-g="en" value="' + esc(v.en) + '" class="' + cls("en") + '"></label></div>' +
+      '<div class="word-ex"><label>Example (Arabic)' + tag("exAr") + '<input type="text" class="ar-in ' + cls("exAr") + '" dir="rtl" lang="ar" data-g="exAr" value="' + esc(v.exAr) + '"></label>' +
+      '<label>Example (English)' + tag("exEn") + '<input type="text" data-g="exEn" value="' + esc(v.exEn) + '" class="' + cls("exEn") + '"></label></div></div>';
+  }).join("") + '<div class="row-actions"><button class="btn primary" id="gapSave" type="button">Save the ticked cards</button></div>';
+}
+function gapSave(){
+  var items = Array.prototype.slice.call(document.querySelectorAll("#gapList [data-gap]")).filter(function(w){ return w.querySelector("[data-gap-save]").checked; });
+  if (!items.length) return setMsg($("#gapMsg"), "Tick at least one card to save.", "bad");
+  var now = new Date().toISOString(), jobs = [], bad = [];
+  items.forEach(function(w){
+    var c = allCards.filter(function(x){ return x.id === w.dataset.gap; })[0]; if (!c) return;
+    var val = function(f){ return w.querySelector('[data-g="' + f + '"]').value.trim(); };
+    var en = val("en"), exAr = val("exAr").replace(/[.۔]+$/, ""), exEn = val("exEn");
+    if (!en || !exAr || !exEn) { bad.push(c.arabic); return; }
+    var examples = [[exAr, exEn]].concat((c.examples || []).slice(1));
+    var row = {english:en, examples:examples, updated_at:now};
+    jobs.push(check(sb.from("cards").update(row).eq("id", c.id)).then(function(){ Object.assign(c, row); w.remove(); }));
+  });
+  if (bad.length) return setMsg($("#gapMsg"), "Fill in every box (or untick the card) for: " + bad.join("، "), "bad");
+  setMsg($("#gapMsg"), "Saving…");
+  Promise.all(jobs).then(function(){
+    setMsg($("#gapMsg"), jobs.length + " card" + (jobs.length === 1 ? "" : "s") + " saved. Learners get them next time they open the app.", "ok");
+    renderCardList();
+    if (!document.querySelector("#gapList [data-gap]")) $("#gapList").innerHTML = "";
+  }).catch(function(err){ setMsg($("#gapMsg"), "Some cards couldn't be saved: " + err.message + ". The ones still listed weren't saved; try again.", "bad"); });
+}
 
 /* ---------- lessons (the Learn tab; table "lessons", 015_lessons.sql) ---------- */
 var LVL = ["", "A1", "A2", "B1", "B2", "C1", "C2"];
