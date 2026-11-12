@@ -592,7 +592,7 @@ $("#checkSheet").addEventListener("click", function(){
       return setMsg(msg, sheet && sheet.error === "no-deck-tab" ? "The sheet has no tab called \"Arabic Vocab\"." : "The script answered, but not with the word list. Update the Apps Script to the latest google-sheet-sync.txt and deploy a new version (SETUP.md, step 7).", "bad");
     }
     // Learners' saved words (ids "u-…") are theirs, not part of the deck.
-    draftsShared = !!res[3];
+    draftsShared = !!res[3]; if (!aiBusy) aiStatus = {text:"", cls:""};
     buildReview(sheet, res[1].filter(function(c){ return !/^u-/.test(c.id); }), res[2], mergeDrafts(res[3]));
     setMsg(msg, "");
     renderReview();
@@ -665,24 +665,35 @@ function saveDrafts(n){
    word is tried once (Fill again retries), and every AI box is marked "AI: check" until someone edits it. */
 function aiTag(n, f){ return n.ai && n.ai[f] ? ' <span class="ai-tag">AI: check</span>' : ""; }
 function aiCls(n, f){ return n.ai && n.ai[f] ? " ai" : ""; }
-var aiBusy = false;
+// The AI status is kept here and shown again whenever the list is redrawn, so it never silently disappears.
+var aiBusy = false, aiStatus = {text:"", cls:""};
+function aiSay(text, cls){
+  aiStatus = {text:text, cls:cls || ""};
+  var el = $("#aiMsg"), btn = $("#aiAgain");
+  if (el) setMsg(el, text, cls);
+  if (btn) { btn.disabled = aiBusy; btn.textContent = aiBusy ? "Filling in with AI…" : "Fill missing meanings and examples with AI"; }
+}
 function aiFill(again){
-  if (aiBusy || !review) return;
+  if (!review) return;
+  if (aiBusy) return aiSay(aiStatus.text || "Already filling in with AI…");
   var todo = review.news.filter(function(n){ return n.action === "add" && (again || !n.aiTried) && (!n.en.trim() || !n.exAr.trim() || !n.exEn.trim()); });
-  if (!todo.length) { if (again) setMsg($("#aiMsg"), "Nothing is missing.", "ok"); return; }
+  if (!todo.length) { if (again) aiSay("Nothing is missing: every new word has a meaning, an example and its translation.", "ok"); return; }
   aiBusy = true;
   var done = 0, filled = 0, failed = "";
   var step = function(){
-    var batch = todo.slice(done, done + 25);
+    var batch = todo.slice(done, done + 10);
     if (!batch.length) {
       aiBusy = false;
-      setMsg($("#aiMsg"), failed ? "AI couldn't finish: " + failed + ". Press Fill again to retry." : filled + " word" + (filled === 1 ? "" : "s") + " filled in by AI. Check the boxes marked AI before publishing.", failed ? "bad" : "ok");
+      aiSay(failed ? "AI couldn't finish: " + failed + ". Press the button to try again." : filled + " word" + (filled === 1 ? "" : "s") + " filled in by AI. Check the boxes marked AI before publishing.", failed ? "bad" : "ok");
       return;
     }
-    setMsg($("#aiMsg"), "Writing missing meanings and examples with AI… (" + done + " of " + todo.length + ")");
-    sb.functions.invoke("fill-words", {body:{words:batch.map(function(n){ return {key:n.key, ar:n.ar, en:n.en, ty:n.ty, lv:n.lv, exAr:n.exAr, exEn:n.exEn}; })}}).then(function(r){
+    aiSay("Writing missing meanings and examples with AI… " + done + " of " + todo.length + " words done.");
+    // Gives up after 2 minutes, so a stuck request can't leave the button waiting forever.
+    var timeout = new Promise(function(_, no){ setTimeout(function(){ no(new Error("the AI took too long")); }, 120000); });
+    Promise.race([sb.functions.invoke("fill-words", {body:{words:batch.map(function(n){ return {key:n.key, ar:n.ar, en:n.en, ty:n.ty, lv:n.lv, exAr:n.exAr, exEn:n.exEn}; })}}), timeout]).then(function(r){
       var d = r.data || {};
-      if (r.error || d.error) throw new Error(d.error || "the fill-words function didn't answer; check it's deployed");
+      if (r.error && !d.error) console.warn("fill-words failed", r.error);
+      if (r.error || d.error) throw new Error(d.error || (r.error && /404|not found/i.test(String(r.error.message || r.error.context && r.error.context.status)) ? "the fill-words function isn't deployed in Supabase yet" : "the fill-words function didn't answer; check it's deployed in Supabase"));
       var got = {}; (d.words || []).forEach(function(w){ got[w.key] = w; });
       batch.forEach(function(n){
         var g = got[n.key]; n.aiTried = true;
@@ -751,6 +762,7 @@ function renderReview(){
     '<p class="msg' + (draftsShared ? "" : " bad") + '" id="draftStatus">' + (draftsShared ? "Unfinished words are saved for every editor as you type." : "Unfinished words are only saved on this browser. Run 032_deck_drafts.sql in Supabase to share them with every editor.") + '</p>';
   el.innerHTML = html;
   updatePublishBtn();
+  if (r.news.length) aiSay(aiStatus.text, aiStatus.cls);
 }
 // Publish sends whatever is ready (finished words, skips, edits, retired and returning words). Words still missing
 // details stay as drafts on this browser, so a long list can be published a bit at a time.
