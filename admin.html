@@ -91,6 +91,8 @@ th{font-weight:600;color:var(--muted);font-size:.8rem;border-top:0}
 .word .choice{display:flex;gap:14px;font-size:.88rem}
 .word .choice label{display:flex;gap:5px;align-items:center}
 .missing{outline:1.5px solid var(--learning)}
+.ai{outline:1.5px dashed var(--lapis)}
+.ai-tag{margin-left:6px;font-size:.72rem;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--lapis-soft);color:var(--lapis)}
 @media (max-width:700px){ .word-grid,.word-ex{grid-template-columns:1fr} }
 .center{max-width:440px;margin:10vh auto;text-align:center}
 .sub{font-size:.95rem;font-weight:600;margin:20px 0 8px}
@@ -594,6 +596,7 @@ $("#checkSheet").addEventListener("click", function(){
     buildReview(sheet, res[1].filter(function(c){ return !/^u-/.test(c.id); }), res[2], mergeDrafts(res[3]));
     setMsg(msg, "");
     renderReview();
+    aiFill(false);
   }).catch(function(err){ setMsg(msg, "Couldn't read the sheet: " + err.message + ". Check the link and that you're online.", "bad"); });
 });
 function col(header, names, fallback){
@@ -636,7 +639,7 @@ function buildReview(sheet, cards, skips, drafts){
       ty: d.ty || TYPE_AR[String(r[iType] || "").trim()] || "",
       exAr: d.exAr != null ? d.exAr : sent,
       exEn: d.exEn != null ? d.exEn : (sent ? split[1] : ""),
-      action: d.action || "add"};
+      action: d.action || "add", ai: d.ai || null, aiTried: !!d.aiTried};
     // The card made from this same row has different Arabic now: probably an edit, not a new word.
     var old = byId.get(cardId);
     if (old && old.is_active !== false && !inSheet.has(normAr(old.arabic))) item.replaces = old;
@@ -649,7 +652,7 @@ function buildReview(sheet, cards, skips, drafts){
   news.forEach(function(n){ if (n.replaces && !(drafts[n.key] && drafts[n.key].action)) n.action = "replace"; });
   review = {news:news, gone:gone, back:back, cards:cards};
 }
-function draftOf(n){ return {en:n.en, lv:n.lv, ty:n.ty, exAr:n.exAr, exEn:n.exEn, action:n.action}; }
+function draftOf(n){ return {en:n.en, lv:n.lv, ty:n.ty, exAr:n.exAr, exEn:n.exEn, action:n.action, ai:n.ai || null, aiTried:!!n.aiTried}; }
 // Saves the word just changed (n) to the shared drafts, and every draft to this browser.
 function saveDrafts(n){
   var d = lsGet(DRAFT_KEY) || {};
@@ -657,6 +660,57 @@ function saveDrafts(n){
   lsSet(DRAFT_KEY, d);
   if (n && draftsShared) pushDraft(n.key, draftOf(n));
 }
+/* Missing meanings, example sentences and translations are written by AI (the fill-words function) from what the
+   sheet gives: the word, its type and level, and any sentence or translation. Only empty boxes are filled, each
+   word is tried once (Fill again retries), and every AI box is marked "AI: check" until someone edits it. */
+function aiTag(n, f){ return n.ai && n.ai[f] ? ' <span class="ai-tag">AI: check</span>' : ""; }
+function aiCls(n, f){ return n.ai && n.ai[f] ? " ai" : ""; }
+var aiBusy = false;
+function aiFill(again){
+  if (aiBusy || !review) return;
+  var todo = review.news.filter(function(n){ return n.action === "add" && (again || !n.aiTried) && (!n.en.trim() || !n.exAr.trim() || !n.exEn.trim()); });
+  if (!todo.length) { if (again) setMsg($("#aiMsg"), "Nothing is missing.", "ok"); return; }
+  aiBusy = true;
+  var done = 0, filled = 0, failed = "";
+  var step = function(){
+    var batch = todo.slice(done, done + 25);
+    if (!batch.length) {
+      aiBusy = false;
+      setMsg($("#aiMsg"), failed ? "AI couldn't finish: " + failed + ". Press Fill again to retry." : filled + " word" + (filled === 1 ? "" : "s") + " filled in by AI. Check the boxes marked AI before publishing.", failed ? "bad" : "ok");
+      return;
+    }
+    setMsg($("#aiMsg"), "Writing missing meanings and examples with AI… (" + done + " of " + todo.length + ")");
+    sb.functions.invoke("fill-words", {body:{words:batch.map(function(n){ return {key:n.key, ar:n.ar, en:n.en, ty:n.ty, lv:n.lv, exAr:n.exAr, exEn:n.exEn}; })}}).then(function(r){
+      var d = r.data || {};
+      if (r.error || d.error) throw new Error(d.error || "the fill-words function didn't answer; check it's deployed");
+      var got = {}; (d.words || []).forEach(function(w){ got[w.key] = w; });
+      batch.forEach(function(n){
+        var g = got[n.key]; n.aiTried = true;
+        if (g) {
+          n.ai = n.ai || {};
+          ["en", "exAr", "exEn"].forEach(function(f){ if (g[f] && !String(n[f]).trim()) { n[f] = g[f]; n.ai[f] = true; } });
+          filled++;
+          showFilled(n);
+        }
+        saveDrafts(n);
+      });
+      done += batch.length; step();
+    }).catch(function(err){ failed = err.message; done = todo.length; step(); });
+  };
+  step();
+}
+// Puts AI text into a word's boxes without redrawing the list, so whatever is being typed isn't interrupted.
+function showFilled(n){
+  var w = document.querySelector('#deckReview .word[data-i="' + review.news.indexOf(n) + '"]'); if (!w) return;
+  ["en", "exAr", "exEn"].forEach(function(f){
+    var el = w.querySelector('[data-f="' + f + '"]');
+    if (!el || el === document.activeElement || !(n.ai && n.ai[f])) return;
+    el.value = n[f]; el.classList.add("ai"); el.classList.remove("missing");
+    if (!el.parentNode.querySelector(".ai-tag")) el.insertAdjacentHTML("beforebegin", '<span class="ai-tag">AI: check</span>');
+  });
+  updatePublishBtn();
+}
+$("#deckReview").addEventListener("click", function(e){ if (e.target.id === "aiAgain") aiFill(true); });
 function complete(n){ return n.action === "skip" || n.action === "replace" || (n.en.trim() && n.lv && n.ty); }
 function renderReview(){
   var el = $("#deckReview"), r = review;
@@ -664,7 +718,8 @@ function renderReview(){
   var html = "";
   if (r.news.length) {
     var missing = r.news.filter(function(n){ return !complete(n); }).length;
-    html += '<h2 style="margin-top:16px">' + r.news.length + ' word' + (r.news.length === 1 ? "" : "s") + ' from the sheet not in the app' + (missing ? ' (' + missing + ' still need details)' : "") + '</h2>';
+    html += '<h2 style="margin-top:16px">' + r.news.length + ' word' + (r.news.length === 1 ? "" : "s") + ' from the sheet not in the app' + (missing ? ' (' + missing + ' still need details)' : "") + '</h2>' +
+      '<div class="row-actions" style="margin-top:0"><button class="btn small" id="aiAgain" type="button">Fill missing meanings and examples with AI</button><span class="msg" id="aiMsg" aria-live="polite"></span></div>';
     r.news.forEach(function(n, i){
       var miss = function(v){ return n.action === "add" && !v ? " missing" : ""; };
       html += '<div class="word' + (n.action === "skip" ? " skip" : "") + '" data-i="' + i + '">' +
@@ -675,11 +730,11 @@ function renderReview(){
           '<label><input type="radio" name="act' + i + '" value="skip"' + (n.action === "skip" ? " checked" : "") + '> Skip (duplicate or note)</label></div>';
       if (n.action === "add") {
         html += '<div class="word-grid">' +
-          '<label>English meaning<input type="text" data-f="en" value="' + esc(n.en) + '" class="' + miss(n.en.trim()) + '" placeholder="e.g. to visit"></label>' +
+          '<label>English meaning' + aiTag(n, "en") + '<input type="text" data-f="en" value="' + esc(n.en) + '" class="' + miss(n.en.trim()) + aiCls(n, "en") + '" placeholder="e.g. he visits"></label>' +
           '<label>Level<select data-f="lv" class="' + miss(n.lv) + '"><option value="">Choose…</option>' + [1,2,3,4,5,6].map(function(l){ return '<option value="' + l + '"' + (String(n.lv) === String(l) ? " selected" : "") + '>' + LV[l] + (l <= 2 ? " (free)" : "") + '</option>'; }).join("") + '</select></label>' +
           '<label>Type<select data-f="ty" class="' + miss(n.ty) + '"><option value="">Choose…</option>' + Object.keys(TY).map(function(t){ return '<option value="' + t + '"' + (n.ty === t ? " selected" : "") + '>' + TY[t] + '</option>'; }).join("") + '</select></label></div>' +
-          '<div class="word-ex"><label>Example (Arabic)<input type="text" class="ar-in" dir="rtl" lang="ar" data-f="exAr" value="' + esc(n.exAr) + '"></label>' +
-          '<label>Example (English)<input type="text" data-f="exEn" value="' + esc(n.exEn) + '"></label></div>';
+          '<div class="word-ex"><label>Example (Arabic)' + aiTag(n, "exAr") + '<input type="text" class="ar-in' + aiCls(n, "exAr") + '" dir="rtl" lang="ar" data-f="exAr" value="' + esc(n.exAr) + '"></label>' +
+          '<label>Example (English)' + aiTag(n, "exEn") + '<input type="text" data-f="exEn" value="' + esc(n.exEn) + '" class="' + aiCls(n, "exEn") + '"></label></div>';
       }
       html += '</div>';
     });
@@ -709,7 +764,9 @@ function updatePublishBtn(){
 $("#deckReview").addEventListener("input", function(e){
   var w = e.target.closest(".word[data-i]");
   if (w && e.target.dataset.f) {
-    var n = review.news[+w.dataset.i]; n[e.target.dataset.f] = e.target.value; saveDrafts(n);
+    var n = review.news[+w.dataset.i], f = e.target.dataset.f; n[f] = e.target.value;
+    if (n.ai && n.ai[f]) { delete n.ai[f]; e.target.classList.remove("ai"); var tg = e.target.parentNode.querySelector(".ai-tag"); if (tg) tg.remove(); }   // checked by a person now
+    saveDrafts(n);
     if (e.target.tagName === "SELECT") renderReview();
     else { e.target.classList.toggle("missing", n.action === "add" && !e.target.value.trim() && e.target.dataset.f === "en"); updatePublishBtn(); }
   }
