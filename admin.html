@@ -679,12 +679,14 @@ function aiFill(again){
   var todo = review.news.filter(function(n){ return n.action === "add" && (again || !n.aiTried) && (!n.en.trim() || !n.exAr.trim() || !n.exEn.trim()); });
   if (!todo.length) { if (again) aiSay("Nothing is missing: every new word has a meaning, an example and its translation.", "ok"); return; }
   aiBusy = true;
-  var done = 0, filled = 0, failed = "";
+  // When Google's AI is busy, a batch waits and tries again (up to 4 times) instead of stopping everything;
+  // a batch that still fails is left for the button, and the rest carry on.
+  var done = 0, filled = 0, failed = "", left = 0, retries = 0;
   var step = function(){
     var batch = todo.slice(done, done + 5);
     if (!batch.length) {
       aiBusy = false;
-      aiSay(failed ? "AI couldn't finish: " + failed + ". Press the button to try again." : filled + " word" + (filled === 1 ? "" : "s") + " filled in by AI. Check the boxes marked AI before publishing.", failed ? "bad" : "ok");
+      aiSay(failed ? filled + " word" + (filled === 1 ? "" : "s") + " filled in, " + left + " not: " + failed + ". Press the button to try those again." : filled + " word" + (filled === 1 ? "" : "s") + " filled in by AI. Check the boxes marked AI before publishing.", failed ? "bad" : "ok");
       return;
     }
     aiSay("Writing missing meanings and examples with AI… " + done + " of " + todo.length + " words done.");
@@ -692,7 +694,7 @@ function aiFill(again){
     var timeout = new Promise(function(_, no){ setTimeout(function(){ no(new Error("the AI took too long")); }, 140000); });
     Promise.race([sb.functions.invoke("fill-words", {body:{words:batch.map(function(n){ return {key:n.key, ar:n.ar, en:n.en, ty:n.ty, lv:n.lv, exAr:n.exAr, exEn:n.exEn}; })}}).then(functionError), timeout]).then(function(r){
       var d = r.data || {};
-      if (r.error || d.error) throw new Error(d.error || r.why);
+      if (r.error || d.error) { var e = new Error(d.error || r.why); e.busy = r.busy || d.busy; throw e; }
       var got = {}; (d.words || []).forEach(function(w){ got[w.key] = w; });
       batch.forEach(function(n){
         var g = got[n.key]; n.aiTried = true;
@@ -704,8 +706,15 @@ function aiFill(again){
         }
         saveDrafts(n);
       });
-      done += batch.length; step();
-    }).catch(function(err){ failed = err.message; done = todo.length; step(); });
+      done += batch.length; retries = 0; step();
+    }).catch(function(err){
+      if ((err.busy || /took too long/.test(err.message)) && retries < 4) {
+        retries++;
+        aiSay("Google's AI is busy right now. Trying again in 20 seconds (try " + retries + " of 4)… " + done + " of " + todo.length + " words done.");
+        return setTimeout(step, 20000);
+      }
+      failed = err.message; left += batch.length; done += batch.length; retries = 0; step();
+    });
   };
   step();
 }
@@ -714,6 +723,7 @@ function aiFill(again){
 function functionError(r){
   if (!r.error) return r;
   var res = r.error.context, status = res && res.status;
+  r = Object.assign({}, r, {busy:status === 503});
   var base = status === 404 ? "Supabase says there's no function called fill-words (404). Check its name is exactly fill-words"
     : status === 401 ? "Supabase refused the request (401). Sign out and in again, or check the function's Verify JWT setting"
     : status ? "the fill-words function failed (" + status + ")" : "couldn't reach the fill-words function (" + (r.error.message || "network error") + ")";
