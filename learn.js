@@ -344,7 +344,8 @@ function renderQuestion(){
     '<div class="opts">' + order.map(function(k){
       var o = q.options[k];
       var c = answered ? (k === q.right ? " right" : k === quiz.picked ? " wrong" : "") : "";
-      return '<button class="opt' + c + '" type="button" data-pick="' + k + '"' + (answered ? " disabled" : "") + '><span class="en">' + esc(o.en || "") + '</span><span class="ar" lang="ar">' + esc(o.ar) + '</span></button>';
+      // The choices are Arabic only, so the question tests the Arabic; their English shows once answered.
+      return '<button class="opt' + c + '" type="button" data-pick="' + k + '"' + (answered ? " disabled" : "") + '><span class="en">' + (answered ? esc(o.en || "") : "") + '</span><span class="ar" lang="ar">' + esc(o.ar) + '</span></button>';
     }).join("") + '</div>';
   if (answered) {
     var ok = quiz.picked === q.right;

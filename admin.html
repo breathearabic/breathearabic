@@ -604,6 +604,9 @@ function col(header, names, fallback){
 function buildReview(sheet, cards, skips, drafts){
   cards = cards.filter(function(c){ return (c.deck || "main") === "main"; });   // the Islamic deck is not in the sheet
   var header = sheet.header || [];
+  var iLevel = col(header, ["level", "المستوى"], -1);
+  // The Level column holds A1-C2 for new words (older rows have dates there, which are ignored).
+  var sheetLevel = function(r){ var m = /^\s*([abc])\s*([12])\s*$/i.exec(iLevel > -1 ? String(r[iLevel] || "") : ""); return m ? String("abc".indexOf(m[1].toLowerCase()) * 2 + +m[2]) : ""; };
   var iType = col(header, ["type"], 1), iTerm = col(header, ["term", "word", "arabic"], 2), iSent = col(header, ["used in a sentence", "sentence", "example"], 3), iTr = col(header, ["translation", "english"], 4);
   var first = sheet.firstRow || 2;
   var byAr = new Map(), byId = new Map(cards.map(function(c){ return [c.id, c]; }));
@@ -629,8 +632,8 @@ function buildReview(sheet, cards, skips, drafts){
     var d = drafts[a] || {};
     var item = {row:row, id:cardId, ar:term, key:a,
       en: d.en != null ? d.en : split[0],
-      lv: d.lv != null ? d.lv : "",
-      ty: d.ty != null ? d.ty : (TYPE_AR[String(r[iType] || "").trim()] || ""),
+      lv: d.lv || sheetLevel(r),
+      ty: d.ty || TYPE_AR[String(r[iType] || "").trim()] || "",
       exAr: d.exAr != null ? d.exAr : sent,
       exEn: d.exEn != null ? d.exEn : (sent ? split[1] : ""),
       action: d.action || "add"};
