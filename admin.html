@@ -681,7 +681,7 @@ function aiFill(again){
   aiBusy = true;
   var done = 0, filled = 0, failed = "";
   var step = function(){
-    var batch = todo.slice(done, done + 10);
+    var batch = todo.slice(done, done + 5);
     if (!batch.length) {
       aiBusy = false;
       aiSay(failed ? "AI couldn't finish: " + failed + ". Press the button to try again." : filled + " word" + (filled === 1 ? "" : "s") + " filled in by AI. Check the boxes marked AI before publishing.", failed ? "bad" : "ok");
@@ -689,7 +689,7 @@ function aiFill(again){
     }
     aiSay("Writing missing meanings and examples with AI… " + done + " of " + todo.length + " words done.");
     // Gives up after 2 minutes, so a stuck request can't leave the button waiting forever.
-    var timeout = new Promise(function(_, no){ setTimeout(function(){ no(new Error("the AI took too long")); }, 120000); });
+    var timeout = new Promise(function(_, no){ setTimeout(function(){ no(new Error("the AI took too long")); }, 140000); });
     Promise.race([sb.functions.invoke("fill-words", {body:{words:batch.map(function(n){ return {key:n.key, ar:n.ar, en:n.en, ty:n.ty, lv:n.lv, exAr:n.exAr, exEn:n.exEn}; })}}).then(functionError), timeout]).then(function(r){
       var d = r.data || {};
       if (r.error || d.error) throw new Error(d.error || r.why);
